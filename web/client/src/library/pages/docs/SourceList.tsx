@@ -21,8 +21,8 @@ export default function SourceList({
     filter === '' ? true : model.name.includes(filter),
   )
   return (
-    <div className="flex flex-col w-full h-full py-1">
-      <ul className="p-1 h-full overflow-auto hover:scrollbar scrollbar--horizontal scrollbar--vertical">
+    <div className="flex flex-col w-full h-full py-2">
+      <ul className="px-2 h-full overflow-auto hover:scrollbar scrollbar--horizontal scrollbar--vertical">
         {isArrayEmpty(modelsFiltered) && (
           <li
             key="not-found"
@@ -46,10 +46,10 @@ export default function SourceList({
                 )}`}
                 className={({ isActive }) =>
                   clsx(
-                    'block px-2 overflow-hidden whitespace-nowrap overflow-ellipsis py-1 rounded-md w-full hover:bg-neutral-10',
+                    'flex items-center px-2 overflow-hidden whitespace-nowrap overflow-ellipsis py-1 rounded-md w-full hover:bg-neutral-10 text-sm font-bold',
                     isActive
                       ? 'text-primary-500 bg-primary-10'
-                      : 'text-neutral-500 dark:text-neutral-100',
+                      : 'text-neutral-400 dark:text-neutral-300',
                   )
                 }
               >
