@@ -82,7 +82,7 @@ export default function RunPlan(): JSX.Element {
       className={clsx(
         'flex items-center',
         isNil(environment) &&
-          'opacity-50 pointer-events-none cursor-not-allowed',
+        'opacity-50 pointer-events-none cursor-not-allowed',
       )}
     >
       <div className="flex items-center relative">
@@ -90,7 +90,7 @@ export default function RunPlan(): JSX.Element {
           className={clsx(
             'mx-0',
             isFalse(environment.isInitial && environment.isDefault) &&
-              'rounded-none rounded-l-lg border-r',
+            'rounded-none rounded-l-lg border-r',
           )}
           variant={EnumVariant.Alternative}
           size={EnumSize.sm}
@@ -113,9 +113,8 @@ export default function RunPlan(): JSX.Element {
                 },
                 children: (
                   <div className="mt-5 pt-4">
-                    <h4 className="mb-2">{`${
-                      environments.size > 1 ? 'Select or ' : ''
-                    }Add Environment`}</h4>
+                    <h4 className="mb-2">{`${environments.size > 1 ? 'Select or ' : ''
+                      }Add Environment`}</h4>
                     <div className="flex items-center relative">
                       {environments.size > 1 && (
                         <SelectEnvironemnt
@@ -170,7 +169,7 @@ export default function RunPlan(): JSX.Element {
   )
 }
 
-function PlanChanges({
+export function PlanChanges({
   environment,
   isRunningPlanOverview,
   isRunningPlanApply,
@@ -182,7 +181,7 @@ function PlanChanges({
   const planOverview = useStorePlan(s => s.planOverview)
 
   return (
-    <span className="flex align-center h-full w-full">
+    <span className="flex align-center h-full">
       <>
         {isRunningPlanOverview ? (
           <span className="flex items-center ml-2">
@@ -349,7 +348,7 @@ function SelectEnvironemnt({
                           'flex justify-between items-center pl-2 pr-1 py-1 cursor-pointer overflow-auto',
                           active && 'bg-primary-10',
                           env === environment &&
-                            'pointer-events-none cursor-default bg-secondary-10',
+                          'pointer-events-none cursor-default bg-secondary-10',
                         )}
                       >
                         <div className="flex items-start">
@@ -542,15 +541,15 @@ function ChangesPreview({
             className={clsx(
               'inline-block ml-1 px-2 rounded-full text-xs font-bold text-neutral-100 cursor-default border border-inherit',
               type === EnumPlanChangeType.Add &&
-                'bg-success-500 border-success-500',
+              'bg-success-500 border-success-500',
               type === EnumPlanChangeType.Remove &&
-                'bg-danger-500 border-danger-500',
+              'bg-danger-500 border-danger-500',
               type === EnumPlanChangeType.Direct &&
-                'bg-secondary-500 border-secondary-500',
+              'bg-secondary-500 border-secondary-500',
               type === EnumPlanChangeType.Indirect &&
-                'bg-warning-500 border-warning-500',
+              'bg-warning-500 border-warning-500',
               type === EnumPlanChangeType.Default &&
-                'bg-neutral-500 border-neutral-500',
+              'bg-neutral-500 border-neutral-500',
             )}
           >
             {changes.length}
@@ -565,7 +564,7 @@ function ChangesPreview({
             leaveFrom="opacity-100 translate-y-0"
             leaveTo="opacity-0 translate-y-1"
           >
-            <Popover.Panel className="absolute right-1 z-10 mt-8 transform flex p-2 bg-theme-lighter shadow-xl focus:ring-2 ring-opacity-5 rounded-lg ">
+            <Popover.Panel className="fixed z-10 mt-8 transform flex p-2 bg-theme-lighter shadow-xl focus:ring-2 ring-opacity-5 rounded-lg ">
               <PlanChangePreview
                 headline={headline}
                 type={type}

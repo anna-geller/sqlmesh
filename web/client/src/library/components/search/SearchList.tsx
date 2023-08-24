@@ -67,6 +67,7 @@ export default function SearchList<
   autoFocus = false,
   isFullWidth = false,
   showIndex = true,
+  direction = 'bottom',
   className,
 }: {
   list: T[]
@@ -80,6 +81,7 @@ export default function SearchList<
   to?: (item: T) => string
   size?: Size
   isFullWidth?: boolean
+  direction?: 'top' | 'bottom'
   className?: string
 }): JSX.Element {
   const navigate = useNavigate()
@@ -166,10 +168,10 @@ export default function SearchList<
             className={clsx(
               'absolute z-10 transform cursor-pointer rounded-lg bg-theme border-2 border-neutral-200',
               'p-2 bg-theme dark:bg-theme-lighter max-h-[25vh] overflow-auto hover:scrollbar scrollbar--vertical scrollbar--horizontal shadow-2xl',
+              direction === 'top' ? 'top-0' : 'bottom-10',
               size === EnumSize.sm && 'mt-10',
               size === EnumSize.md && 'mt-12',
               size === EnumSize.lg && 'mt-14',
-              isFullWidth ? 'w-full' : 'w-full max-w-[20rem]',
             )}
             ref={elList}
             onKeyDown={(e: React.KeyboardEvent) => {

@@ -19,6 +19,8 @@ interface ContextStore {
   defaultEnvironment?: ModelEnvironment
   pinnedEnvironments: ModelEnvironment[]
   models: Map<string, ModelSQLMeshModel>
+  lastActiveModel?: ModelSQLMeshModel
+  setLastActiveModel: (lastActiveModel?: ModelSQLMeshModel) => void
   setVersion: (version?: string) => void
   setIsRunningPlan: (isRunningPlan: boolean) => void
   setShowConfirmation: (showConfirmation: boolean) => void
@@ -98,7 +100,7 @@ export const useStoreContext = create<ContextStore>((set, get) => ({
       models: models.reduce((acc: Map<string, ModelSQLMeshModel>, model) => {
         let tempModel = s.models.get(model.path) ?? s.models.get(model.name)
 
-        if (tempModel == null) {
+        if (isNil(tempModel)) {
           tempModel = new ModelSQLMeshModel(model)
         } else {
           tempModel.update(model)
