@@ -256,7 +256,7 @@ export function PlanChanges({
   )
 }
 
-function SelectEnvironemnt({
+export function SelectEnvironemnt({
   onSelect,
   environment,
   disabled,
@@ -306,7 +306,8 @@ function SelectEnvironemnt({
             <span
               className={clsx(
                 'block overflow-hidden truncate',
-                (environment.isLocal || disabled) && 'text-neutral-500',
+                (environment.isLocal || disabled) &&
+                'text-neutral-600 dark:text-neutral-300',
                 environment.isSynchronized && 'text-primary-500',
               )}
             >
@@ -314,7 +315,7 @@ function SelectEnvironemnt({
             </span>
             <span className="pointer-events-none inset-y-0 right-0 flex items-center pl-2">
               <ChevronDownIcon
-                className="h-4 w-4"
+                className="h-4 w-4 text-secondary-500 dark:text-primary-500"
                 aria-hidden="true"
               />
             </span>
@@ -327,9 +328,9 @@ function SelectEnvironemnt({
           >
             <div
               className={clsx(
-                'absolute top-9 overflow-hidden shadow-xl bg-theme border-2 border-primary-20 rounded-md flex flex-col z-10',
-                side === EnumSide.Left && 'left-0',
-                side === EnumSide.Right && 'right-0',
+                'absolute max-w-full top-10 overflow-hidden shadow-xl bg-theme border-2 border-primary-20 rounded-md flex flex-col z-10',
+                side === EnumSide.Left && 'left-1',
+                side === EnumSide.Right && 'right-1',
               )}
             >
               <Menu.Items className="overflow-auto max-h-80 py-2 hover:scrollbar scrollbar--vertical">
