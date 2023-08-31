@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import typing as t
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,13 +20,14 @@ if PYDANTIC_MAJOR_VERSION >= 2:
 else:
     from pydantic import BaseSettings  # type: ignore
 
+project_path = os.environ.get("PROJECT_PATH") or "example/sushi"
 
 logger = logging.getLogger(__name__)
 get_context_lock = asyncio.Lock()
 
 
 class Settings(BaseSettings):
-    project_path: Path = Path("examples/sushi")
+    project_path: Path = Path(project_path)
     config: str = ""
     gateway: t.Optional[str] = None
 
