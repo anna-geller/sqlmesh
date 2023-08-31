@@ -63,6 +63,10 @@ export interface ApiOptions {
   removeTimeoutErrorAfter?: number
 }
 
+export interface ApiQueryOptions {
+  enabled?: boolean
+}
+
 export interface ApiQueryMeta extends QueryMeta {
   onError: (error: ApiExceptionPayload) => void
   onSuccess: () => void
