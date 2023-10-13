@@ -12,6 +12,7 @@ from sqlglot.errors import SchemaError
 import sqlmesh.core.constants
 from sqlmesh.core.config import (
     Config,
+    DatabricksConnectionConfig,
     EnvironmentSuffixTarget,
     ModelDefaultsConfig,
     SnowflakeConnectionConfig,
@@ -427,10 +428,10 @@ def test_plan_default_end(sushi_context_pre_scheduling: Context):
     assert forward_only_dev_plan._start == plan_end
 
 
-def test_default_schema_and_config(sushi_context_pre_scheduling) -> None:
+def test_schema_error_no_default(sushi_context_pre_scheduling) -> None:
     context = sushi_context_pre_scheduling
 
-    with pytest.raises(SchemaError) as ex:
+    with pytest.raises(SchemaError):
         context.upsert_model(
             load_sql_based_model(
                 parse(
@@ -442,20 +443,22 @@ def test_default_schema_and_config(sushi_context_pre_scheduling) -> None:
             )
         )
 
-    context.config.model_defaults.schema_ = "schema"
+
+def test_default_catalog(sushi_context_pre_scheduling) -> None:
+    context = sushi_context_pre_scheduling
+
     c = load_sql_based_model(
         parse(
             """
-        MODEL(name c);
-        SELECT x FROM a
+        MODEL(name schema.c);
+        SELECT x FROM schema.a
         """
         )
     )
     context.upsert_model(c)
 
     c.update_schema(
-        MappingSchema({"a": {"col": exp.DataType.build("int")}}),
-        default_schema="schema",
+        MappingSchema({"schema": {"a": {"col": exp.DataType.build("int")}}}),
         default_catalog="catalog",
     )
     assert c.mapping_schema == {"catalog": {"schema": {"a": {"col": "INT"}}}}
@@ -534,3 +537,38 @@ def test_unrestorable_snapshot(sushi_context: Context) -> None:
     )
     assert model_v1_old_snapshot.snapshot_id != model_v1_new_snapshot.snapshot_id
     assert model_v1_old_snapshot.fingerprint != model_v1_new_snapshot.fingerprint
+
+
+def test_default_catalog_connections():
+    context = Context(paths="examples/sushi")
+    assert context.default_catalog is None
+
+    # Verify that not providing catalog does not result in a default catalog
+    config = Config(
+        model_defaults=ModelDefaultsConfig(dialect="presto"),
+        default_connection=DatabricksConnectionConfig(
+            server_hostname="test", http_path="test", access_token="test"
+        ),
+    )
+    context = Context(paths="examples/sushi", config=config)
+    assert context.default_catalog is None
+
+    # Verify that providing a catalog gets set as default catalog
+    config = Config(
+        model_defaults=ModelDefaultsConfig(dialect="presto"),
+        default_connection=DatabricksConnectionConfig(
+            server_hostname="test", http_path="test", access_token="test", catalog="catalog"
+        ),
+    )
+    context = Context(paths="examples/sushi", config=config)
+    assert context.default_catalog == "catalog"
+
+    # Verify that providing a catalog into a connection with a property that isn't `catalog` gets assigned properly
+    config = Config(
+        model_defaults=ModelDefaultsConfig(dialect="presto"),
+        default_connection=SnowflakeConnectionConfig(
+            account="test", user="test", password="test", database="catalog"
+        ),
+    )
+    context = Context(paths="examples/sushi", config=config)
+    assert context.default_catalog == "catalog"

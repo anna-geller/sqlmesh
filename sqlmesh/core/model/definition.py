@@ -536,14 +536,11 @@ class _Model(ModelMeta, frozen=True):
     def update_schema(
         self,
         schema: MappingSchema,
-        default_schema: t.Optional[str] = None,
         default_catalog: t.Optional[str] = None,
     ) -> None:
         """Updates the schema for this model's dependencies based on the given mapping schema."""
         for dep in self.depends_on:
-            table = d.set_default_schema_and_catalog(
-                dep, default_schema=default_schema, default_catalog=default_catalog
-            )
+            table = d.set_default_catalog(dep, default_catalog=default_catalog)
             mapping_schema = schema.find(table)
 
             if mapping_schema:
@@ -1042,11 +1039,10 @@ class SqlModel(_SqlBasedModel):
     def update_schema(
         self,
         schema: MappingSchema,
-        default_schema: t.Optional[str] = None,
         default_catalog: t.Optional[str] = None,
     ) -> None:
         super().update_schema(
-            schema, default_schema=default_schema, default_catalog=default_catalog
+            schema, default_catalog=default_catalog
         )
         self._columns_to_types = None
         self._query_renderer._optimized_cache = {}

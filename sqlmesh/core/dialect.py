@@ -786,15 +786,12 @@ def pandas_to_sql(
     )
 
 
-def set_default_schema_and_catalog(
+def set_default_catalog(
     table: str | exp.Table,
-    default_schema: t.Optional[str],
     default_catalog: t.Optional[str],
 ) -> exp.Table:
     table = exp.to_table(table)
 
-    if default_schema and not table.db:
-        table.set("db", exp.to_identifier(default_schema))
     if default_catalog and not table.catalog:
         table.set("catalog", exp.to_identifier(default_catalog))
 

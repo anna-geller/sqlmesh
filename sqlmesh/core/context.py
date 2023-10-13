@@ -277,6 +277,7 @@ class Context(BaseContext):
         connection_config = self.config.get_connection(self.gateway)
         self.concurrent_tasks = concurrent_tasks or connection_config.concurrent_tasks
         self._engine_adapter = engine_adapter or connection_config.create_engine_adapter()
+        self.default_catalog = connection_config.get_catalog()
 
         test_connection_config = self.config.get_test_connection(self.gateway)
         self._test_engine_adapter = test_connection_config.create_engine_adapter()
@@ -347,7 +348,7 @@ class Context(BaseContext):
             self.dag,
             self._models,
             self.path,
-            {model.name: self.config_for_node(model).model_defaults},
+            self.default_catalog,
         )
 
         model.validate_definition()
@@ -852,10 +853,7 @@ class Context(BaseContext):
         model_selector = Selector(
             self.state_reader,
             self._models,
-            {
-                model.name: self.config_for_node(model).model_defaults
-                for model in self.models.values()
-            },
+            self.default_catalog,
             self.path,
         )
 

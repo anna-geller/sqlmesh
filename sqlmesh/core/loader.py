@@ -14,7 +14,7 @@ from sqlglot.schema import MappingSchema
 
 from sqlmesh.core import constants as c
 from sqlmesh.core.audit import Audit, load_multiple_audits
-from sqlmesh.core.dialect import parse, set_default_schema_and_catalog
+from sqlmesh.core.dialect import parse, set_default_catalog
 from sqlmesh.core.macros import MacroRegistry, macro
 from sqlmesh.core.metric import Metric, MetricMeta, expand_metrics, load_metric_ddl
 from sqlmesh.core.model import (
@@ -34,7 +34,7 @@ from sqlmesh.utils.metaprogramming import Executable, import_python_file
 from sqlmesh.utils.yaml import YAML
 
 if t.TYPE_CHECKING:
-    from sqlmesh.core.config import Config, ModelDefaultsConfig
+    from sqlmesh.core.config import Config
     from sqlmesh.core.context import Context
 
 
@@ -46,7 +46,7 @@ def update_model_schemas(
     dag: DAG[str],
     models: UniqueKeyDict[str, Model],
     context_path: Path,
-    model_defaults: t.Dict[str, ModelDefaultsConfig],
+    default_catalog: t.Optional[str] = None,
 ) -> None:
     schema = MappingSchema(normalize=False)
     optimized_query_cache: OptimizedQueryCache = OptimizedQueryCache(context_path / c.CACHE)
@@ -58,14 +58,9 @@ def update_model_schemas(
         if not model:
             continue
 
-        default = model_defaults.get(name)
-        kwargs = {
-            "default_schema": default.schema_ if default else None,
-            "default_catalog": default.catalog if default else None,
-        }
-        table = set_default_schema_and_catalog(name, **kwargs)
+        table = set_default_catalog(name, default_catalog)
         try:
-            model.update_schema(schema, **kwargs)
+            model.update_schema(schema, default_catalog=default_catalog)
             optimized_query_cache.with_optimized_query(model)
 
             columns_to_types = model.columns_to_types
@@ -135,10 +130,7 @@ class Loader(abc.ABC):
                 self._dag,
                 models,
                 self._context.path,
-                {
-                    model.name: self._context.config_for_path(model._path).model_defaults
-                    for model in models.values()
-                },
+                self._context.default_catalog,
             )
             for model in models.values():
                 # The model definition can be validated correctly only after the schema is set.
