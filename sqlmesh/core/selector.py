@@ -18,9 +18,9 @@ class Selector:
         self,
         state_reader: StateReader,
         models: UniqueKeyDict[str, Model],
-        default_catalog: t.Optional[str],
         context_path: Path = Path("."),
         dag: t.Optional[DAG[str]] = None,
+        default_catalog: t.Optional[str] = None,
     ):
         self._state_reader = state_reader
         self._models = models

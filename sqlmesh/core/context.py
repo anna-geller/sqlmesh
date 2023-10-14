@@ -853,8 +853,8 @@ class Context(BaseContext):
         model_selector = Selector(
             self.state_reader,
             self._models,
-            self.default_catalog,
-            self.path,
+            context_path=self.path,
+            default_catalog=self.default_catalog,
         )
 
         models_override: t.Optional[UniqueKeyDict[str, Model]] = None

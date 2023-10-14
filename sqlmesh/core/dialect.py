@@ -793,6 +793,8 @@ def set_default_catalog(
     table = exp.to_table(table)
 
     if default_catalog and not table.catalog:
+        if not table.db:
+            raise SQLMeshError(f"Cannot set default catalog on table without schema: {table}")
         table.set("catalog", exp.to_identifier(default_catalog))
 
     return table

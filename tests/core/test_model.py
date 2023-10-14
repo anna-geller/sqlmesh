@@ -2452,3 +2452,83 @@ def test_signals():
         "signals ((table_name = 'table_a', ds = @end_ds), (table_name = 'table_b', ds = @end_ds, hour = @end_hour), (bool_key = TRUE, int_key = 1, float_key = 1.0, string_key = 'string')"
         in model.render_definition()[0].sql()
     )
+
+
+def test_default_catalog(assert_exp_eq):
+    expressions = d.parse(
+        """
+        MODEL (
+            name db.table,
+            default_catalog CATALOG,
+        );
+        SELECT x
+        FROM db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "catalog"
+    assert model.fqn == "catalog.db.table"
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "catalog"."db"."source" AS "source"
+        """,
+    )
+
+    expressions = d.parse(
+        """
+        MODEL (
+            name db.table,
+            default_catalog "CATALOG-1",
+        );
+        SELECT x
+        FROM db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "CATALOG-1"
+    assert model.fqn == '"CATALOG-1".db.table'
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "CATALOG-1"."db"."source" AS "source"
+        """,
+    )
+
+    # Verify that we don't try to qualify CTE expressions
+    expressions = d.parse(
+        """
+        MODEL (
+            name db.table,
+            default_catalog "CATALOG-1",
+        );
+        with cte as (
+            SELECT x
+            FROM db.source
+        )
+        select * from cte
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "CATALOG-1"
+    assert model.fqn == '"CATALOG-1".db.table'
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        with "cte" as (
+            SELECT "x"
+            FROM "CATALOG-1"."db"."source" AS "source"
+        )
+        select * from "cte"
+        """,
+    )

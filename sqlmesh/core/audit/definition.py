@@ -464,6 +464,7 @@ def load_audit(
     macros: t.Optional[MacroRegistry] = None,
     jinja_macros: t.Optional[JinjaMacroRegistry] = None,
     dialect: t.Optional[str] = None,
+    default_catalog: t.Optional[str] = None,
 ) -> Audit:
     """Load an audit from a parsed SQLMesh audit file.
 
@@ -534,11 +535,16 @@ def load_audit(
         extra_kwargs["jinja_macros"] = (jinja_macros or JinjaMacroRegistry()).trim(
             jinja_macro_refrences
         )
+        extra_kwargs["default_catalog"] = default_catalog
 
     dialect = meta_fields.pop("dialect", dialect)
     try:
         audit = audit_class(
-            query=query, expressions=statements, dialect=dialect, **meta_fields, **extra_kwargs
+            query=query,
+            expressions=statements,
+            dialect=dialect,
+            **extra_kwargs,
+            **meta_fields,
         )
     except Exception as ex:
         _raise_config_error(str(ex), path)
@@ -555,6 +561,7 @@ def load_multiple_audits(
     macros: t.Optional[MacroRegistry] = None,
     jinja_macros: t.Optional[JinjaMacroRegistry] = None,
     dialect: t.Optional[str] = None,
+    default_catalog: t.Optional[str] = None,
 ) -> t.Generator[Audit, None, None]:
     audit_block: t.List[exp.Expression] = []
     for expression in expressions:
@@ -567,6 +574,7 @@ def load_multiple_audits(
                     macros=macros,
                     jinja_macros=jinja_macros,
                     dialect=dialect,
+                    default_catalog=default_catalog,
                 )
                 audit_block.clear()
         audit_block.append(expression)
@@ -574,6 +582,7 @@ def load_multiple_audits(
         expressions=audit_block,
         path=path,
         dialect=dialect,
+        default_catalog=default_catalog,
     )
 
 
@@ -597,4 +606,5 @@ META_FIELD_CONVERTER: t.Dict[str, t.Callable] = {
     "depends_on_": lambda value: exp.Tuple(expressions=sorted(value)),
     "tags": _single_value_or_tuple,
     "hash_raw_query": exp.convert,
+    "default_catalog": exp.to_identifier,
 }

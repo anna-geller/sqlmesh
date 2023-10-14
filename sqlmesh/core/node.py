@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import Field
 from sqlglot import exp
+from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 
 from sqlmesh.utils.cron import CroniterCache
 from sqlmesh.utils.date import TimeLike, to_datetime
@@ -167,9 +168,10 @@ class _Node(PydanticModel):
         cron: A cron string specifying how often the node should be run, leveraging the
             [croniter](https://github.com/kiorky/croniter) library.
         interval_unit: The duration of an interval for the node. By default, it is computed from the cron expression.
+        tags: A list of tags that can be used to filter nodes.
         stamp: An optional arbitrary string sequence used to create new node versions without making
             changes to any of the functional components of the definition.
-        tags: A list of tags that can be used to filter nodes.
+        default_catalog: The default catalog this node is defined on.
     """
 
     name: str
@@ -181,17 +183,20 @@ class _Node(PydanticModel):
     interval_unit_: t.Optional[IntervalUnit] = Field(alias="interval_unit", default=None)
     tags: t.List[str] = []
     stamp: t.Optional[str] = None
+    default_catalog: t.Optional[str] = None
 
     _croniter: t.Optional[CroniterCache] = None
     __inferred_interval_unit: t.Optional[IntervalUnit] = None
 
-    @field_validator("name", mode="before")
-    @classmethod
-    def _name_validator(cls, v: t.Any) -> str:
-        return v.meta.get("sql") or v.sql() if isinstance(v, exp.Expression) else str(v)
+    @field_validator("name", "default_catalog", mode="before")
+    def _name_validator(cls, v: t.Any) -> t.Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, exp.Expression):
+            return v.meta.get("sql") or v.sql()
+        return str(v)
 
     @field_validator("start", mode="before")
-    @classmethod
     def _date_validator(cls, v: t.Any) -> t.Optional[TimeLike]:
         if isinstance(v, exp.Expression):
             v = v.name
@@ -200,7 +205,6 @@ class _Node(PydanticModel):
         return v
 
     @field_validator("cron", mode="before")
-    @classmethod
     def _cron_validator(cls, v: t.Any) -> t.Optional[str]:
         cron = str_or_exp_to_str(v)
         if cron:
@@ -213,7 +217,6 @@ class _Node(PydanticModel):
         return cron
 
     @field_validator("owner", "description", "stamp", mode="before")
-    @classmethod
     def _string_expr_validator(cls, v: t.Any) -> t.Optional[str]:
         return str_or_exp_to_str(v)
 
@@ -237,6 +240,12 @@ class _Node(PydanticModel):
                 raise ConfigError(
                     f"Interval unit of '{interval_unit}' is larger than cron period of '{cron}'"
                 )
+
+        default_catalog = values.get("default_catalog")
+        if default_catalog:
+            values["default_catalog"] = normalize_identifiers(
+                default_catalog, dialect=values.get("dialect")
+            ).name
         return values
 
     @property

@@ -360,6 +360,7 @@ class SqlMeshLoader(Loader):
                         macros=macros,
                         jinja_macros=jinja_macros,
                         dialect=config.model_defaults.dialect,
+                        default_catalog=self._context.default_catalog,
                     )
                     for audit in audits:
                         audits_by_name[audit.name] = audit

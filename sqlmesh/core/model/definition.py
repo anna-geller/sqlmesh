@@ -47,6 +47,7 @@ from sqlmesh.utils.metaprogramming import (
 )
 
 if t.TYPE_CHECKING:
+    from sqlmesh.core._typing import TableName
     from sqlmesh.core.audit import ModelAudit
     from sqlmesh.core.context import ExecutionContext
     from sqlmesh.core.engine_adapter import EngineAdapter
@@ -730,6 +731,7 @@ class _Model(ModelMeta, frozen=True):
             self.stamp,
             self.physical_schema,
             str(self.interval_unit) if self.interval_unit is not None else None,
+            self.default_catalog or "",
         ]
 
         for column_name, column_type in (self.columns_to_types_ or {}).items():
@@ -918,6 +920,7 @@ class _SqlBasedModel(_Model):
                 jinja_macro_registry=self.jinja_macros,
                 python_env=self.python_env,
                 only_execution_time=self.kind.only_execution_time,
+                default_catalog=self.default_catalog,
             )
         return self.__statement_renderers[expression_key]
 
@@ -1129,6 +1132,7 @@ class SqlModel(_SqlBasedModel):
                 jinja_macro_registry=self.jinja_macros,
                 python_env=self.python_env,
                 only_execution_time=self.kind.only_execution_time,
+                default_catalog=self.default_catalog,
             )
         return self.__query_renderer
 
@@ -1525,7 +1529,7 @@ def load_sql_based_model(
 
 
 def create_sql_model(
-    name: str,
+    name: TableName,
     query: exp.Expression,
     *,
     pre_statements: t.Optional[t.List[exp.Expression]] = None,
@@ -1599,7 +1603,7 @@ def create_sql_model(
 
 
 def create_seed_model(
-    name: str,
+    name: TableName,
     seed_kind: SeedKind,
     *,
     dialect: t.Optional[str] = None,
@@ -1711,7 +1715,7 @@ def create_python_model(
 
 
 def create_external_model(
-    name: str,
+    name: TableName,
     *,
     dialect: t.Optional[str] = None,
     path: Path = Path(),
@@ -1737,7 +1741,7 @@ def create_external_model(
 
 def _create_model(
     klass: t.Type[_Model],
-    name: str,
+    name: TableName,
     *,
     defaults: t.Optional[t.Dict[str, t.Any]] = None,
     path: Path = Path(),
@@ -1969,4 +1973,5 @@ META_FIELD_CONVERTER: t.Dict[str, t.Callable] = {
     "session_properties_": lambda value: value,
     "allow_partials": exp.convert,
     "signals": lambda values: exp.Tuple(expressions=values),
+    "default_catalog": exp.to_identifier,
 }

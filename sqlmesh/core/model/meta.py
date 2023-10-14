@@ -67,7 +67,6 @@ class ModelMeta(_Node, extra="allow"):
     _properties_validator = properties_validator
 
     @field_validator("audits", mode="before")
-    @classmethod
     def _audits_validator(cls, v: t.Any) -> t.Any:
         def extract(v: exp.Expression) -> t.Tuple[str, t.Dict[str, exp.Expression]]:
             kwargs = {}
@@ -136,7 +135,6 @@ class ModelMeta(_Node, extra="allow"):
         return v
 
     @field_validator("dialect", "storage_format", mode="before")
-    @classmethod
     def _string_validator(cls, v: t.Any) -> t.Optional[str]:
         return str_or_exp_to_str(v)
 
@@ -384,3 +382,8 @@ class ModelMeta(_Node, extra="allow"):
         if isinstance(self.kind, IncrementalByUniqueKeyKind):
             return self.kind.when_matched
         return None
+
+    @property
+    def fqn(self) -> str:
+        """Returns the fully qualified name of a model including the default catalog if set."""
+        return d.set_default_catalog(self.name, default_catalog=self.default_catalog).sql()
