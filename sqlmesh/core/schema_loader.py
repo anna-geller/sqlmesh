@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import typing as t
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from sqlglot import exp
 from sqlglot.dialects.dialect import DialectType
 
 from sqlmesh.core.engine_adapter import EngineAdapter
-from sqlmesh.core.model import Model
+from sqlmesh.core.model.registry import ModelRegistry
 from sqlmesh.core.state_sync import StateReader
 from sqlmesh.utils import yaml
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def create_schema_file(
     path: Path,
-    models: t.Dict[str, Model],
+    model_registry: ModelRegistry,
     adapter: EngineAdapter,
     state_reader: StateReader,
     dialect: DialectType,
@@ -28,7 +27,7 @@ def create_schema_file(
 
     Args:
         path: The path to store the YAML file.
-        models: A dictionary of models to fetch columns from the db.
+        model_registry: Registry of models that contains both name and fqn
         adapter: The engine adapter.
         state_reader: The state reader.
         dialect: The dialect to serialize the schema as.
@@ -36,11 +35,11 @@ def create_schema_file(
     """
     external_tables = set()
 
-    for model in models.values():
+    for model in model_registry.models:
         if model.kind.is_external:
             external_tables.add(model.name)
         for dep in model.depends_on:
-            if dep not in models:
+            if dep not in model_registry:
                 external_tables.add(dep)
 
     # Make sure we don't convert internal models into external ones.

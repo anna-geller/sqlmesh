@@ -312,6 +312,7 @@ class QueryRenderer(BaseExpressionRenderer):
         macro_definitions: t.List[d.MacroDef],
         schema: t.Optional[t.Dict[str, t.Any]] = None,
         model_name: t.Optional[str] = None,
+        model_fqn: t.Optional[str] = None,
         path: Path = Path(),
         jinja_macro_registry: t.Optional[JinjaMacroRegistry] = None,
         python_env: t.Optional[t.Dict[str, Executable]] = None,
@@ -331,6 +332,7 @@ class QueryRenderer(BaseExpressionRenderer):
         )
 
         self._model_name = model_name
+        self._model_fqn = model_fqn
 
         self._optimized_cache: t.Dict[CacheKey, exp.Expression] = {}
 

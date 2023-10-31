@@ -5,6 +5,7 @@ import typing as t
 from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import IntEnum
+from itertools import product
 
 from pydantic import Field
 from sqlglot import exp
@@ -214,7 +215,7 @@ class SnapshotInfoMixin(ModelKindMixin):
 
     @property
     def qualified_view_name(self) -> QualifiedViewName:
-        view_name = exp.to_table(self.name)
+        view_name = exp.to_table(self.model_fqt or self.name)
         return QualifiedViewName(
             catalog=view_name.catalog or None,
             schema_name=view_name.db or None,
@@ -238,6 +239,10 @@ class SnapshotInfoMixin(ModelKindMixin):
 
     @property
     def is_new_version(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    def model_fqt(self) -> t.Optional[exp.Table]:
         raise NotImplementedError
 
     @property
@@ -272,6 +277,7 @@ class SnapshotInfoMixin(ModelKindMixin):
             self.name,
             version,
             is_dev_table=is_dev_table,
+            catalog=self.model_fqt.catalog if self.model_fqt else None,
         )
 
     @property
@@ -297,6 +303,7 @@ class SnapshotTableInfo(PydanticModel, SnapshotInfoMixin, frozen=True):
     previous_versions: t.Tuple[SnapshotDataVersion, ...] = ()
     change_category: t.Optional[SnapshotChangeCategory] = None
     kind_name: t.Optional[ModelKindName] = None
+    model_fqn: t.Optional[str] = None
     node_type_: NodeType = Field(default=NodeType.MODEL, alias="node_type")
 
     def __lt__(self, other: SnapshotTableInfo) -> bool:
@@ -313,6 +320,10 @@ class SnapshotTableInfo(PydanticModel, SnapshotInfoMixin, frozen=True):
     @property
     def physical_schema(self) -> str:
         return self.physical_schema_
+
+    @property
+    def model_fqt(self) -> t.Optional[exp.Table]:
+        return exp.to_table(self.model_fqn) if self.model_fqn else None
 
     @property
     def table_info(self) -> SnapshotTableInfo:
@@ -891,6 +902,7 @@ class Snapshot(PydanticModel, SnapshotInfoMixin):
             change_category=self.change_category,
             kind_name=self.model_kind_name,
             node_type=self.node_type,
+            model_fqn=self.model.fqn if self.is_model else None,
         )
 
     @property
@@ -1003,6 +1015,13 @@ class Snapshot(PydanticModel, SnapshotInfoMixin):
         """Is restatement disabled for the node"""
         return self.is_model and self.model.disable_restatement
 
+    @property
+    def model_fqt(self) -> t.Optional[exp.Table]:
+        if not self.is_model:
+            return None
+        node = t.cast(Model, self.node)
+        return node.fqt
+
     def _ensure_categorized(self) -> None:
         if not self.change_category:
             raise SQLMeshError(f"Snapshot {self.snapshot_id} has not been categorized yet.")
@@ -1111,7 +1130,6 @@ class DeployabilityIndex(PydanticModel, frozen=True):
     ) -> DeployabilityIndex:
         if not isinstance(snapshots, dict):
             snapshots = {s.snapshot_id: s for s in snapshots}
-
         dag = snapshots_to_dag(snapshots.values())
         reversed_dag = dag.reversed.graph
 
@@ -1125,7 +1143,7 @@ class DeployabilityIndex(PydanticModel, frozen=True):
                 return
 
             if deployable:
-                snapshot = snapshots[node]
+                snapshot = snapshots[node]  # type: ignore
                 # Capture uncategorized snapshot which represents a forward-only model.
                 is_forward_only_model = (
                     snapshot.previous_versions and snapshot.is_model and snapshot.model.forward_only
@@ -1178,7 +1196,13 @@ class DeployabilityIndex(PydanticModel, frozen=True):
         return f"{snapshot_id.name}__{snapshot_id.identifier}"
 
 
-def table_name(physical_schema: str, name: str, version: str, is_dev_table: bool = False) -> str:
+def table_name(
+    physical_schema: str,
+    name: str,
+    version: str,
+    is_dev_table: bool = False,
+    catalog: t.Optional[str] = None,
+) -> str:
     table = exp.to_table(name)
 
     # bigquery projects usually have "-" in them which is illegal in the table name, so we aggressively prune
@@ -1187,6 +1211,8 @@ def table_name(physical_schema: str, name: str, version: str, is_dev_table: bool
 
     table.set("this", exp.to_identifier(f"{name}__{version}{temp_suffix}"))
     table.set("db", exp.to_identifier(physical_schema))
+    if not table.catalog and catalog:
+        table.set("catalog", exp.to_identifier(catalog) if catalog else None)
     return exp.table_name(table)
 
 
@@ -1250,7 +1276,7 @@ def _parents_from_node(
     parent_nodes = set()
     for parent in node.depends_on:
         if parent in nodes:
-            parent_nodes.add(parent)
+            parent_nodes.add(nodes[parent].name)
             if nodes[parent].is_model and t.cast(_Model, nodes[parent]).kind.is_embedded:
                 parent_nodes.update(_parents_from_node(nodes[parent], nodes))
 
@@ -1331,9 +1357,13 @@ def to_table_mapping(
 ) -> t.Dict[str, str]:
     deployability_index = deployability_index or DeployabilityIndex.all_deployable()
     return {
-        snapshot.name: snapshot.table_name(deployability_index.is_representative(snapshot))
+        k: v
         for snapshot in snapshots
         if snapshot.version and not snapshot.is_symbolic
+        for k, v in product(
+            [snapshot.name, snapshot.model.fqn] if snapshot.is_model else [snapshot.name],
+            [snapshot.table_name(deployability_index.is_representative(snapshot))],
+        )
     }
 
 

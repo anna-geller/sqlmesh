@@ -70,6 +70,7 @@ from sqlmesh.core.loader import Loader, update_model_schemas
 from sqlmesh.core.macros import ExecutableOrMacro
 from sqlmesh.core.metric import Metric, rewrite
 from sqlmesh.core.model import Model
+from sqlmesh.core.model.registry import ModelRegistry
 from sqlmesh.core.notification_target import (
     NotificationEvent,
     NotificationTarget,
@@ -257,7 +258,7 @@ class Context(BaseContext):
         )
 
         self.dag: DAG[str] = DAG()
-        self._models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
+        self._model_registry = ModelRegistry()
         self._audits: UniqueKeyDict[str, Audit] = UniqueKeyDict("audits")
         self._standalone_audits: UniqueKeyDict[str, StandaloneAudit] = UniqueKeyDict(
             "standaloneaudits"
@@ -342,11 +343,11 @@ class Context(BaseContext):
         model = t.cast(Model, type(model)(**{**t.cast(Model, model).dict(), **kwargs}))
         model._path = path
 
-        self._models.update({model.name: model})
+        self._model_registry.upsert(model)
         self.dag.add(model.name, model.depends_on)
         update_model_schemas(
             self.dag,
-            self._models,
+            self._model_registry,
             self.path,
             self.default_catalog,
         )
@@ -413,7 +414,7 @@ class Context(BaseContext):
             project = self._loader.load(self, update_schemas)
             self._macros = project.macros
             self._jinja_macros = project.jinja_macros
-            self._models = project.models
+            self._model_registry = project.model_registry
             self._metrics = project.metrics
             self._standalone_audits.clear()
             self._audits.clear()
@@ -425,7 +426,7 @@ class Context(BaseContext):
             self.dag = project.dag
             gc.enable()
 
-            duplicates = set(self._models) & set(self._standalone_audits)
+            duplicates = self._model_registry.all_names & set(self._standalone_audits)
             if duplicates:
                 raise ConfigError(
                     f"Models and Standalone audits cannot have the same name: {duplicates}"
@@ -565,7 +566,7 @@ class Context(BaseContext):
         """
         if isinstance(model_or_snapshot, str):
             normalized_name = normalize_model_name(model_or_snapshot, dialect=self.config.dialect)
-            model = self._models.get(normalized_name)
+            model = self._model_registry.get(normalized_name)
         elif isinstance(model_or_snapshot, Snapshot):
             model = model_or_snapshot.model
         else:
@@ -625,16 +626,16 @@ class Context(BaseContext):
     def config_for_node(self, node: str | Model | StandaloneAudit) -> Config:
         return self.config_for_path(
             (
-                self._models.get(node, None) or self._standalone_audits.get(node, None)
+                self._model_registry.get(node) or self._standalone_audits[node]
                 if isinstance(node, str)
                 else node
-            )._path
+            )._path  # type: ignore
         )
 
     @property
     def models(self) -> MappingProxyType[str, Model]:
         """Returns all registered models in this context."""
-        return MappingProxyType(self._models)
+        return MappingProxyType(self._model_registry.name_to_model)
 
     @property
     def metrics(self) -> MappingProxyType[str, Metric]:
@@ -745,7 +746,7 @@ class Context(BaseContext):
 
     def format(self, transpile: t.Optional[str] = None, newline: bool = False) -> None:
         """Format all models in a given directory."""
-        for model in self._models.values():
+        for model in self._model_registry.models:
             if not model.is_sql:
                 continue
             with open(model._path, "r+", encoding="utf-8") as file:
@@ -852,14 +853,14 @@ class Context(BaseContext):
 
         model_selector = Selector(
             self.state_reader,
-            self._models,
+            self._model_registry,
             context_path=self.path,
             default_catalog=self.default_catalog,
         )
 
-        models_override: t.Optional[UniqueKeyDict[str, Model]] = None
+        model_registry_override = ModelRegistry()
         if select_models:
-            models_override = model_selector.select_models(
+            model_registry_override = model_selector.select_models(
                 select_models, environment, fallback_env_name=create_from or c.PROD
             )
 
@@ -879,7 +880,7 @@ class Context(BaseContext):
         plan = Plan(
             context_diff=self._context_diff(
                 environment or c.PROD,
-                snapshots=self._snapshots(models_override),
+                snapshots=self._snapshots(model_registry_override),
                 create_from=create_from,
             ),
             start=start,
@@ -1103,7 +1104,7 @@ class Context(BaseContext):
             if tests:
                 result = run_model_tests(
                     tests=tests,
-                    models=self._models,
+                    models=self._model_registry,
                     engine_adapter=self._test_engine_adapter,
                     dialect=self.config.dialect,
                     verbosity=verbosity,
@@ -1123,7 +1124,7 @@ class Context(BaseContext):
 
                 result = run_tests(
                     test_meta,
-                    models=self._models,
+                    model_registry=self._model_registry,
                     engine_adapter=self._test_engine_adapter,
                     dialect=self.config.dialect,
                     verbosity=verbosity,
@@ -1236,17 +1237,15 @@ class Context(BaseContext):
         The schema file contains all columns and types of external models, allowing for more robust
         lineage, validation, and optimizations.
         """
-        if not self._models:
+        if not self._model_registry:
             self.load(update_schemas=False)
 
         for path, config in self.configs.items():
             create_schema_file(
                 path=path / c.SCHEMA_YAML,
-                models={
-                    name: model
-                    for name, model in self._models.items()
-                    if self.config_for_node(model) is config
-                },
+                model_registry=self._model_registry.filter(
+                    lambda x: self.config_for_node(x) is config
+                ),
                 adapter=self._engine_adapter,
                 state_reader=self.state_reader,
                 dialect=config.model_defaults.dialect,
@@ -1307,7 +1306,7 @@ class Context(BaseContext):
         }
 
     def _snapshots(
-        self, models_override: t.Optional[UniqueKeyDict[str, Model]] = None
+        self, model_registry_override: t.Optional[ModelRegistry] = None
     ) -> t.Dict[str, Snapshot]:
         prod = self.state_reader.get_environment(c.PROD)
         remote_snapshots = (
@@ -1318,8 +1317,12 @@ class Context(BaseContext):
             if prod
             else {}
         )
-
-        local_nodes = {**(models_override or self._models), **self._standalone_audits}
+        model_registry = model_registry_override or self._model_registry
+        local_nodes: t.Dict[str, t.Union[Model, StandaloneAudit]] = {
+            **model_registry.name_to_model,
+            **self._standalone_audits,
+        }
+        local_nodes_and_fqn_models = {**local_nodes, **model_registry.fqn_to_model}
         nodes = local_nodes.copy()
         audits = self._audits.copy()
         projects = {config.project for config in self.configs.values()}
@@ -1347,7 +1350,7 @@ class Context(BaseContext):
 
                 snapshot = Snapshot.from_node(
                     node,
-                    nodes=nodes,
+                    nodes=local_nodes_and_fqn_models,
                     audits=audits,
                     cache=fingerprint_cache,
                     ttl=ttl,

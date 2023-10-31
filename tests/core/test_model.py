@@ -2479,30 +2479,6 @@ def test_default_catalog(assert_exp_eq):
         """,
     )
 
-    expressions = d.parse(
-        """
-        MODEL (
-            name db.table,
-            default_catalog "CATALOG-1",
-        );
-        SELECT x
-        FROM db.source
-        """
-    )
-
-    model = load_sql_based_model(expressions)
-    assert model.default_catalog == "CATALOG-1"
-    assert model.fqn == '"CATALOG-1".db.table'
-
-    assert_exp_eq(
-        model.render_query(),
-        """
-        SELECT
-          "x" AS "x"
-          FROM "CATALOG-1"."db"."source" AS "source"
-        """,
-    )
-
     # Verify that we don't try to qualify CTE expressions
     expressions = d.parse(
         """
@@ -2532,3 +2508,174 @@ def test_default_catalog(assert_exp_eq):
         select * from "cte"
         """,
     )
+
+    # Test having a default catalog and a catalog set on the model name
+    expressions = d.parse(
+        """
+        MODEL (
+            name catalog.db.table,
+            default_catalog other_catalog,
+        );
+        SELECT x
+        FROM db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "other_catalog"
+    assert model.fqn == "catalog.db.table"
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "other_catalog"."db"."source" AS "source"
+        """,
+    )
+
+
+def test_default_catalog_hash(assert_exp_eq):
+    """
+    If a default catalog changes then we only want this to effect hashing if the model itself was effected
+    because a previously unqualified reference is now qualified.
+    We also make sure that model name is not affected by default catalog.
+    """
+    HASH_WITH_CATALOG = "2961459665"
+
+    # Test setting default catalog doesn't change hash if it matches existing logic
+    expressions = d.parse(
+        """
+        MODEL (
+            name catalog.db.table,
+            default_catalog catalog,
+        );
+        SELECT x
+        FROM catalog.db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "catalog"
+    assert model.name == "catalog.db.table"
+    assert model.fqn == "catalog.db.table"
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "catalog"."db"."source" AS "source"
+        """,
+    )
+
+    assert model.data_hash == HASH_WITH_CATALOG
+
+    expressions = d.parse(
+        """
+        MODEL (
+            name catalog.db.table,
+        );
+        SELECT x
+        FROM catalog.db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog is None
+    assert model.name == "catalog.db.table"
+    assert model.fqn == "catalog.db.table"
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "catalog"."db"."source" AS "source"
+        """,
+    )
+
+    assert model.data_hash == HASH_WITH_CATALOG
+
+    # Test setting default catalog to a different catalog but everything if fully qualified then no hash change
+    expressions = d.parse(
+        """
+        MODEL (
+            name catalog.db.table,
+            default_catalog other_catalog,
+        );
+        SELECT x
+        FROM catalog.db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "other_catalog"
+    assert model.name == "catalog.db.table"
+    assert model.fqn == "catalog.db.table"
+
+    assert_exp_eq(
+        model.render_query(),
+        """
+        SELECT
+          "x" AS "x"
+          FROM "catalog"."db"."source" AS "source"
+        """,
+    )
+
+    assert model.data_hash == HASH_WITH_CATALOG
+
+    # test that hash changes if model contains a non-fully-qualified reference
+    expressions = d.parse(
+        """
+        MODEL (
+            name catalog.db.table,
+            default_catalog other_catalog,
+        );
+        SELECT x
+        FROM db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "other_catalog"
+    assert model.name == "catalog.db.table"
+    assert model.fqn == "catalog.db.table"
+
+    assert model.data_hash == "1219137124" != HASH_WITH_CATALOG
+
+    # test that hash changes if the only change to a model is it's fully qualified name
+    expressions = d.parse(
+        """
+        MODEL (
+            name db.table,
+        );
+        SELECT x
+        FROM catalog.db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog is None
+    assert model.name == "db.table"
+    assert model.fqn == "db.table"
+
+    assert model.data_hash == "3100514156" != HASH_WITH_CATALOG
+
+    expressions = d.parse(
+        """
+        MODEL (
+            name db.table,
+            default_catalog catalog,
+        );
+        SELECT x
+        FROM catalog.db.source
+        """
+    )
+
+    model = load_sql_based_model(expressions)
+    assert model.default_catalog == "catalog"
+    assert model.name == "db.table"
+    assert model.fqn == "catalog.db.table"
+
+    assert model.data_hash == HASH_WITH_CATALOG

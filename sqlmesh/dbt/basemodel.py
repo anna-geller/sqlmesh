@@ -253,6 +253,9 @@ class BaseModelConfig(GeneralConfig):
             "post_statements": [d.jinja_statement(hook.sql) for hook in self.post_hook],
             "tags": self.tags,
             "physical_schema_override": context.sqlmesh_config.physical_schema_override,
+            "default_catalog": context._target.to_sqlmesh().get_catalog()
+            if context._target
+            else None,
             **self.sqlmesh_config_kwargs,
         }
 

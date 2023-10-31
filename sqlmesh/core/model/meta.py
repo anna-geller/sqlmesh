@@ -59,12 +59,21 @@ class ModelMeta(_Node, extra="allow"):
     session_properties_: t.Optional[exp.Tuple] = Field(default=None, alias="session_properties")
     allow_partials: bool = False
     signals: t.List[exp.Tuple] = []
+    default_catalog: t.Optional[str] = None
 
     _table_properties: t.Dict[str, exp.Expression] = {}
 
     _bool_validator = bool_validator
     _model_kind_validator = model_kind_validator
     _properties_validator = properties_validator
+
+    @field_validator("default_catalog", mode="before")
+    def _default_catalog_validator(cls, v: t.Any) -> t.Optional[str]:
+        if v is None:
+            return None
+        if isinstance(v, exp.Expression):
+            return v.meta.get("sql") or v.sql()
+        return str(v)
 
     @field_validator("audits", mode="before")
     def _audits_validator(cls, v: t.Any) -> t.Any:
@@ -269,6 +278,7 @@ class ModelMeta(_Node, extra="allow"):
     def _root_validator(cls, values: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
         values = cls._kind_validator(values)
         values = cls._normalize_name(values)
+        values = cls._normalize_default_catalog(values)
         return values
 
     @classmethod
@@ -289,6 +299,15 @@ class ModelMeta(_Node, extra="allow"):
     @classmethod
     def _normalize_name(cls, values: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
         values["name"] = d.normalize_model_name(values["name"], dialect=values.get("dialect"))
+        return values
+
+    @classmethod
+    def _normalize_default_catalog(cls, values: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
+        default_catalog = values.get("default_catalog")
+        if default_catalog:
+            values["default_catalog"] = normalize_identifiers(
+                default_catalog, dialect=values.get("dialect")
+            ).name
         return values
 
     @property
@@ -384,6 +403,19 @@ class ModelMeta(_Node, extra="allow"):
         return None
 
     @property
+    def catalog(self) -> t.Optional[str]:
+        """Returns the catalog of a model."""
+        return self.fqt.catalog
+
+    @property
+    def fqt(self) -> exp.Table:
+        return d.set_default_catalog(self.name, default_catalog=self.default_catalog)
+
+    @property
     def fqn(self) -> str:
         """Returns the fully qualified name of a model including the default catalog if set."""
-        return d.set_default_catalog(self.name, default_catalog=self.default_catalog).sql()
+        return self.fqt.sql()
+
+    @property
+    def name_and_fqn_are_different(self) -> bool:
+        return self.name != self.fqn

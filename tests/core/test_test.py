@@ -98,7 +98,7 @@ def _create_test(
         body=body[test_name],
         test_name=test_name,
         model=model,
-        models=context._models,
+        model_registry=context._model_registry,
         engine_adapter=context._test_engine_adapter,
         dialect=context.config.dialect,
         path=None,

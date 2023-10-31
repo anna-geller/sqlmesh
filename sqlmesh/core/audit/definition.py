@@ -249,6 +249,7 @@ class ModelAudit(PydanticModel, AuditMixin, frozen=True):
             jinja_macro_registry=self.jinja_macros,
             python_env=model.python_env,
             only_execution_time=model.kind.only_execution_time,
+            default_catalog=model.default_catalog,
         )
 
 
@@ -272,6 +273,7 @@ class StandaloneAudit(_Node, AuditMixin):
     depends_on_: t.Optional[t.Set[str]] = Field(default=None, alias="depends_on")
     hash_raw_query: bool = False
     python_env_: t.Optional[t.Dict[str, Executable]] = Field(default=None, alias="python_env")
+    default_catalog: t.Optional[str] = None
 
     source_type: Literal["audit"] = "audit"
 
@@ -438,6 +440,7 @@ class StandaloneAudit(_Node, AuditMixin):
             path=self._path or Path(),
             jinja_macro_registry=self.jinja_macros,
             python_env=self.python_env,
+            default_catalog=self.default_catalog,
         )
 
 

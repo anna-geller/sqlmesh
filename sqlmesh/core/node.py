@@ -6,7 +6,6 @@ from enum import Enum
 
 from pydantic import Field
 from sqlglot import exp
-from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 
 from sqlmesh.utils.cron import CroniterCache
 from sqlmesh.utils.date import TimeLike, to_datetime
@@ -171,7 +170,6 @@ class _Node(PydanticModel):
         tags: A list of tags that can be used to filter nodes.
         stamp: An optional arbitrary string sequence used to create new node versions without making
             changes to any of the functional components of the definition.
-        default_catalog: The default catalog this node is defined on.
     """
 
     name: str
@@ -183,12 +181,11 @@ class _Node(PydanticModel):
     interval_unit_: t.Optional[IntervalUnit] = Field(alias="interval_unit", default=None)
     tags: t.List[str] = []
     stamp: t.Optional[str] = None
-    default_catalog: t.Optional[str] = None
 
     _croniter: t.Optional[CroniterCache] = None
     __inferred_interval_unit: t.Optional[IntervalUnit] = None
 
-    @field_validator("name", "default_catalog", mode="before")
+    @field_validator("name", mode="before")
     def _name_validator(cls, v: t.Any) -> t.Optional[str]:
         if v is None:
             return None
@@ -240,12 +237,6 @@ class _Node(PydanticModel):
                 raise ConfigError(
                     f"Interval unit of '{interval_unit}' is larger than cron period of '{cron}'"
                 )
-
-        default_catalog = values.get("default_catalog")
-        if default_catalog:
-            values["default_catalog"] = normalize_identifiers(
-                default_catalog, dialect=values.get("dialect")
-            ).name
         return values
 
     @property

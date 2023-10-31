@@ -513,7 +513,7 @@ def test_fingerprint(model: Model, parent_model: Model):
     fingerprint = fingerprint_from_node(model, nodes={})
 
     original_fingerprint = SnapshotFingerprint(
-        data_hash="3858405978",
+        data_hash="3716731950",
         metadata_hash="1583920325",
     )
 
@@ -560,7 +560,7 @@ def test_fingerprint_seed_model():
     )
 
     expected_fingerprint = SnapshotFingerprint(
-        data_hash="3087690732",
+        data_hash="1288520162",
         metadata_hash="3176816456",
     )
 
@@ -599,7 +599,7 @@ def test_fingerprint_jinja_macros(model: Model):
         }
     )
     original_fingerprint = SnapshotFingerprint(
-        data_hash="3259138119",
+        data_hash="2104798344",
         metadata_hash="1583920325",
     )
 
@@ -689,6 +689,23 @@ def test_table_name(snapshot: Snapshot, make_snapshot: t.Callable):
     assert (
         fully_qualified_snapshot.table_name()
         == f'"my-catalog".sqlmesh__db.my_catalog__db__table__{fully_qualified_snapshot.version}'
+    )
+    # Ensure that default catalog is ignored if there is already a catalog defined on the snapshot
+    assert (
+        fully_qualified_snapshot.table_name(is_deployable=True)
+        == f'"my-catalog".sqlmesh__db.my_catalog__db__table__{fully_qualified_snapshot.version}'
+    )
+    non_fully_qualified_snapshot = make_snapshot(
+        SqlModel(
+            name="db.table", query=parse_one("select 1, ds"), default_catalog='"other-catalog"'
+        )
+    )
+    non_fully_qualified_snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
+    # The default catalog is used for determining the location of the physical table but it is not used in the table
+    # name itself.
+    assert (
+        non_fully_qualified_snapshot.table_name(is_deployable=True)
+        == f'"other-catalog".sqlmesh__db.db__table__{non_fully_qualified_snapshot.version}'
     )
 
 

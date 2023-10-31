@@ -261,6 +261,7 @@ def test_schema_jinja(sushi_test_project: Project, assert_exp_eq):
         name="model",
         package_name="package",
         schema="sushi",
+        alias="table",
         sql="SELECT 1 AS one FROM {{ schema }}",
     )
     context = sushi_test_project.context
@@ -289,6 +290,7 @@ def test_model_this(assert_exp_eq, sushi_test_project: Project):
     model_config = ModelConfig(
         name="model",
         package_name="package",
+        schema="schema",
         alias="test",
         sql="SELECT 1 AS one FROM {{ this.identifier }}",
     )
@@ -499,6 +501,7 @@ def test_parsetime_adapter_call(
         name="model",
         package_name="package",
         alias="test",
+        schema="sushi",
         sql="""
             {% set results = run_query('select 1 as one') %}
             SELECT {{ results.columns[0].values()[0] }} AS one FROM {{ this.identifier }}
@@ -597,6 +600,7 @@ def test_is_incremental(sushi_test_project: Project, assert_exp_eq, mocker):
         name="model",
         package_name="package",
         schema="sushi",
+        alias="some_table",
         sql="""
         SELECT 1 AS one FROM tbl_a
         {% if is_incremental() %}

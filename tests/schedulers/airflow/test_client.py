@@ -121,6 +121,7 @@ def test_apply_plan(mocker: MockerFixture, snapshot: Snapshot):
             "snapshots": [
                 {
                     "fingerprint": snapshot.fingerprint.dict(),
+                    "model_fqn": "test_model",
                     "name": "test_model",
                     "node_type": NodeType.MODEL,
                     "previous_versions": [],

@@ -5,7 +5,6 @@ import typing as t
 import unittest
 
 from sqlmesh.core.engine_adapter import EngineAdapter
-from sqlmesh.core.model import Model
 from sqlmesh.core.test.definition import ModelTest
 from sqlmesh.core.test.discovery import (
     ModelTestMetadata,
@@ -15,10 +14,13 @@ from sqlmesh.core.test.discovery import (
 )
 from sqlmesh.core.test.result import ModelTextTestResult
 
+if t.TYPE_CHECKING:
+    from sqlmesh.core.model.registry import ModelRegistry
+
 
 def run_tests(
     model_test_metadata: list[ModelTestMetadata],
-    models: dict[str, Model],
+    model_registry: ModelRegistry,
     engine_adapter: EngineAdapter,
     dialect: str | None = None,
     verbosity: int = 1,
@@ -28,7 +30,7 @@ def run_tests(
 
     Args:
         model_test_metadata: A list of ModelTestMetadata named tuples.
-        models: All models to use for expansion and mapping of physical locations.
+        model_registry: All models to use for expansion and mapping of physical locations.
         engine_adapter: The engine adapter to use.
         verbosity: The verbosity level.
     """
@@ -36,7 +38,7 @@ def run_tests(
         ModelTest.create_test(
             body=metadata.body,
             test_name=metadata.test_name,
-            models=models,
+            model_registry=model_registry,
             engine_adapter=engine_adapter,
             dialect=dialect,
             path=metadata.path,
@@ -51,7 +53,7 @@ def run_tests(
 
 def run_model_tests(
     tests: list[str],
-    models: dict[str, Model],
+    models: ModelRegistry,
     engine_adapter: EngineAdapter,
     dialect: str | None = None,
     verbosity: int = 1,

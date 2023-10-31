@@ -580,7 +580,7 @@ def prompt(
     context = ctx.obj
 
     llm_integration = LLMIntegration(
-        context.models.values(),
+        context._model_registry.models,
         context.engine_adapter.dialect,
         temperature=temperature,
         verbose=verbose,

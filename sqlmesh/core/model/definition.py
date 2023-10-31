@@ -22,6 +22,7 @@ from sqlglot.time import format_time
 
 from sqlmesh.core import constants as c
 from sqlmesh.core import dialect as d
+from sqlmesh.core.dialect import set_default_catalog
 from sqlmesh.core.macros import MacroRegistry, macro
 from sqlmesh.core.model.common import expression_validator
 from sqlmesh.core.model.kind import (
@@ -597,7 +598,7 @@ class _Model(ModelMeta, frozen=True):
 
     @property
     def view_name(self) -> str:
-        return exp.to_table(self.name).name
+        return self.fqt.name
 
     @property
     def python_env(self) -> t.Dict[str, Executable]:
@@ -605,7 +606,7 @@ class _Model(ModelMeta, frozen=True):
 
     @property
     def schema_name(self) -> str:
-        return exp.to_table(self.name).db or c.DEFAULT_SCHEMA
+        return self.fqt.db or c.DEFAULT_SCHEMA
 
     @property
     def physical_schema(self) -> str:
@@ -632,7 +633,8 @@ class _Model(ModelMeta, frozen=True):
             query = self.render_query(optimize=False)
             if query is None:
                 return False
-            return self.name in d.find_tables(query, dialect=self.dialect)
+            tables = d.find_tables(query, dialect=self.dialect)
+            return self.name in tables or self.fqn in tables
 
         return self._depends_on_past
 
@@ -731,7 +733,9 @@ class _Model(ModelMeta, frozen=True):
             self.stamp,
             self.physical_schema,
             str(self.interval_unit) if self.interval_unit is not None else None,
-            self.default_catalog or "",
+            # We use fqn here instead of default catalog because if a user sets a default catalog but that
+            # same catalog that is already being used in the model then we don't want the hash to change
+            self.fqn,
         ]
 
         for column_name, column_type in (self.columns_to_types_ or {}).items():
@@ -1004,7 +1008,7 @@ class SqlModel(_SqlBasedModel):
             if query is not None:
                 self._depends_on |= d.find_tables(query, dialect=self.dialect)
 
-            self._depends_on -= {self.name}
+            self._depends_on -= {self.name, self.fqn}
         return self._depends_on
 
     @property
@@ -1044,9 +1048,7 @@ class SqlModel(_SqlBasedModel):
         schema: MappingSchema,
         default_catalog: t.Optional[str] = None,
     ) -> None:
-        super().update_schema(
-            schema, default_catalog=default_catalog
-        )
+        super().update_schema(schema, default_catalog=default_catalog)
         self._columns_to_types = None
         self._query_renderer._optimized_cache = {}
 
@@ -1128,6 +1130,7 @@ class SqlModel(_SqlBasedModel):
                 self.macro_definitions,
                 schema=self.mapping_schema,
                 model_name=self.name,
+                model_fqn=self.fqn,
                 path=self._path,
                 jinja_macro_registry=self.jinja_macros,
                 python_env=self.python_env,
@@ -1558,11 +1561,11 @@ def create_sql_model(
         path: An optional path to the model definition file.
         module_path: The python module path to serialize macros for.
         time_column_format: The default time column format to use if no model time column is configured.
+            The format must adhere to Python's strftime codes.
         macros: The custom registry of macros. If not provided the default registry will be used.
         python_env: The custom Python environment for macros. If not provided the environment will be constructed
             from the macro registry.
         dialect: The default dialect if no model dialect is configured.
-            The format must adhere to Python's strftime codes.
     """
     if not isinstance(query, (exp.Subqueryable, d.JinjaQuery, d.MacroFunc)):
         # Users are not expected to pass in a single MacroFunc instance for a model's query;
@@ -1679,6 +1682,7 @@ def create_python_model(
     time_column_format: str = c.DEFAULT_TIME_COLUMN_FORMAT,
     depends_on: t.Optional[t.Set[str]] = None,
     physical_schema_override: t.Optional[t.Dict[str, str]] = None,
+    default_catalog: t.Optional[str] = None,
     **kwargs: t.Any,
 ) -> Model:
     """Creates a Python model.
@@ -1696,7 +1700,8 @@ def create_python_model(
     # Find dependencies for python models by parsing code if they are not explicitly defined
     # Also remove self-references that are found
     depends_on = (
-        _parse_depends_on(entrypoint, python_env) - {name}
+        _parse_depends_on(entrypoint, python_env)
+        - {name, set_default_catalog(name, default_catalog).sql()}
         if depends_on is None and python_env is not None
         else depends_on
     )
@@ -1710,6 +1715,7 @@ def create_python_model(
         entrypoint=entrypoint,
         python_env=python_env,
         physical_schema_override=physical_schema_override,
+        default_catalog=default_catalog,
         **kwargs,
     )
 
@@ -1751,6 +1757,7 @@ def _create_model(
     depends_on: t.Optional[t.Set[str]] = None,
     dialect: t.Optional[str] = None,
     physical_schema_override: t.Optional[t.Dict[str, str]] = None,
+    default_catalog: t.Optional[str] = None,
     **kwargs: t.Any,
 ) -> Model:
     _validate_model_fields(klass, {"name", *kwargs} - {"grain"}, path)
@@ -1773,6 +1780,7 @@ def _create_model(
                 "physical_schema_override": physical_schema_override.get(
                     exp.to_table(name, dialect=dialect).db
                 ),
+                "default_catalog": default_catalog,
                 **kwargs,
             },
         )

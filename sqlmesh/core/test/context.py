@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import typing as t
+
 from sqlmesh.core.context import ExecutionContext
 from sqlmesh.core.engine_adapter import EngineAdapter
-from sqlmesh.core.model import Model
-from sqlmesh.core.test.definition import _test_fixture_name
+from sqlmesh.core.model.registry import ModelRegistry
+from sqlmesh.core.test.definition import _fully_qualified_test_fixture_name
 
 
 class TestExecutionContext(ExecutionContext):
@@ -11,19 +13,22 @@ class TestExecutionContext(ExecutionContext):
 
     Args:
         engine_adapter: The engine adapter to execute queries against.
-        models: All upstream models to use for expansion and mapping of physical locations.
+        model_registry: All upstream models to use for expansion and mapping of physical locations.
     """
 
     def __init__(
         self,
         engine_adapter: EngineAdapter,
-        models: dict[str, Model],
+        model_registry: ModelRegistry,
     ):
         self.is_dev = True
         self._engine_adapter = engine_adapter
-        self.__model_tables = {k: _test_fixture_name(k) for k in models}
+        self.__model_tables = {
+            name: _fully_qualified_test_fixture_name(name, model_registry)
+            for name in model_registry.all_names
+        }
 
     @property
-    def _model_tables(self) -> dict[str, str]:
+    def _model_tables(self) -> t.Dict[str, str]:
         """Returns a mapping of model names to tables."""
         return self.__model_tables
