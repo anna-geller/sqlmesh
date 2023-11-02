@@ -70,7 +70,6 @@ from sqlmesh.core.loader import Loader, update_model_schemas
 from sqlmesh.core.macros import ExecutableOrMacro
 from sqlmesh.core.metric import Metric, rewrite
 from sqlmesh.core.model import Model
-from sqlmesh.core.model.registry import ModelRegistry
 from sqlmesh.core.notification_target import (
     NotificationEvent,
     NotificationTarget,
@@ -134,6 +133,11 @@ class BaseContext(abc.ABC):
 
     @property
     @abc.abstractmethod
+    def _model_name_mapping(self) -> t.Dict[str, Model]:
+        """Returns a mapping of model names to models."""
+
+    @property
+    @abc.abstractmethod
     def engine_adapter(self) -> EngineAdapter:
         """Returns an engine adapter."""
 
@@ -151,7 +155,7 @@ class BaseContext(abc.ABC):
         Returns:
             The physical table name.
         """
-        return self._model_tables[model_name]
+        return self._model_tables[self._model_name_mapping[model_name].fqn]
 
     def fetchdf(
         self, query: t.Union[exp.Expression, str], quote_identifiers: bool = False
@@ -201,6 +205,10 @@ class ExecutionContext(BaseContext):
         self.deployability_index = deployability_index
         self._engine_adapter = engine_adapter
         self.__model_tables = to_table_mapping(snapshots.values(), deployability_index)
+        self.__model_name_mapping = t.cast(
+            t.Dict[str, Model],
+            {snapshot.name: snapshot.node for snapshot in snapshots.values() if snapshot.is_model},
+        )
 
     @property
     def engine_adapter(self) -> EngineAdapter:
@@ -211,6 +219,11 @@ class ExecutionContext(BaseContext):
     def _model_tables(self) -> t.Dict[str, str]:
         """Returns a mapping of model names to tables."""
         return self.__model_tables
+
+    @property
+    def _model_name_mapping(self) -> t.Dict[str, Model]:
+        """Returns a mapping of model names to models."""
+        return self.__model_name_mapping
 
 
 class Context(BaseContext):
@@ -258,7 +271,7 @@ class Context(BaseContext):
         )
 
         self.dag: DAG[str] = DAG()
-        self._model_registry = ModelRegistry()
+        self._models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
         self._audits: UniqueKeyDict[str, Audit] = UniqueKeyDict("audits")
         self._standalone_audits: UniqueKeyDict[str, StandaloneAudit] = UniqueKeyDict(
             "standaloneaudits"
@@ -343,11 +356,11 @@ class Context(BaseContext):
         model = t.cast(Model, type(model)(**{**t.cast(Model, model).dict(), **kwargs}))
         model._path = path
 
-        self._model_registry.upsert(model)
-        self.dag.add(model.name, model.depends_on)
+        self._models.update({model.fqn: model})
+        self.dag.add(model.fqn, model.depends_on)
         update_model_schemas(
             self.dag,
-            self._model_registry,
+            self._models,
             self.path,
             self.default_catalog,
         )
@@ -414,7 +427,7 @@ class Context(BaseContext):
             project = self._loader.load(self, update_schemas)
             self._macros = project.macros
             self._jinja_macros = project.jinja_macros
-            self._model_registry = project.model_registry
+            self._models = project.models
             self._metrics = project.metrics
             self._standalone_audits.clear()
             self._audits.clear()
@@ -426,7 +439,7 @@ class Context(BaseContext):
             self.dag = project.dag
             gc.enable()
 
-            duplicates = self._model_registry.all_names & set(self._standalone_audits)
+            duplicates = set(self._models) & set(self._standalone_audits)
             if duplicates:
                 raise ConfigError(
                     f"Models and Standalone audits cannot have the same name: {duplicates}"
@@ -565,8 +578,10 @@ class Context(BaseContext):
             The expected model.
         """
         if isinstance(model_or_snapshot, str):
-            normalized_name = normalize_model_name(model_or_snapshot, dialect=self.config.dialect)
-            model = self._model_registry.get(normalized_name)
+            normalized_name = normalize_model_name(
+                model_or_snapshot, dialect=self.config.dialect, default_catalog=self.default_catalog
+            )
+            model = self._models.get(normalized_name)
         elif isinstance(model_or_snapshot, Snapshot):
             model = model_or_snapshot.model
         else:
@@ -602,7 +617,9 @@ class Context(BaseContext):
             The expected snapshot.
         """
         if isinstance(node_or_snapshot, str):
-            normalized_name = normalize_model_name(node_or_snapshot, dialect=self.config.dialect)
+            normalized_name = normalize_model_name(
+                node_or_snapshot, default_catalog=self.default_catalog, dialect=self.config.dialect
+            )
             snapshot = self.snapshots.get(normalized_name)
         elif isinstance(node_or_snapshot, Snapshot):
             snapshot = node_or_snapshot
@@ -626,7 +643,7 @@ class Context(BaseContext):
     def config_for_node(self, node: str | Model | StandaloneAudit) -> Config:
         return self.config_for_path(
             (
-                self._model_registry.get(node) or self._standalone_audits[node]
+                self._models.get(node) or self._standalone_audits[node]
                 if isinstance(node, str)
                 else node
             )._path  # type: ignore
@@ -635,7 +652,7 @@ class Context(BaseContext):
     @property
     def models(self) -> MappingProxyType[str, Model]:
         """Returns all registered models in this context."""
-        return MappingProxyType(self._model_registry.name_to_model)
+        return MappingProxyType(self._models)
 
     @property
     def metrics(self) -> MappingProxyType[str, Metric]:
@@ -746,7 +763,7 @@ class Context(BaseContext):
 
     def format(self, transpile: t.Optional[str] = None, newline: bool = False) -> None:
         """Format all models in a given directory."""
-        for model in self._model_registry.models:
+        for model in self._models.values():
             if not model.is_sql:
                 continue
             with open(model._path, "r+", encoding="utf-8") as file:
@@ -853,14 +870,14 @@ class Context(BaseContext):
 
         model_selector = Selector(
             self.state_reader,
-            self._model_registry,
+            self._models,
             context_path=self.path,
             default_catalog=self.default_catalog,
         )
 
-        model_registry_override = ModelRegistry()
+        model_override: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
         if select_models:
-            model_registry_override = model_selector.select_models(
+            model_override = model_selector.select_models(
                 select_models, environment, fallback_env_name=create_from or c.PROD
             )
 
@@ -880,7 +897,7 @@ class Context(BaseContext):
         plan = Plan(
             context_diff=self._context_diff(
                 environment or c.PROD,
-                snapshots=self._snapshots(model_registry_override),
+                snapshots=self._snapshots(model_override),
                 create_from=create_from,
             ),
             start=start,
@@ -1104,7 +1121,7 @@ class Context(BaseContext):
             if tests:
                 result = run_model_tests(
                     tests=tests,
-                    models=self._model_registry,
+                    models=self._models,
                     engine_adapter=self._test_engine_adapter,
                     dialect=self.config.dialect,
                     verbosity=verbosity,
@@ -1124,11 +1141,12 @@ class Context(BaseContext):
 
                 result = run_tests(
                     test_meta,
-                    model_registry=self._model_registry,
+                    models=self._models,
                     engine_adapter=self._test_engine_adapter,
                     dialect=self.config.dialect,
                     verbosity=verbosity,
                     stream=stream,
+                    default_catalog=self.default_catalog,
                 )
         finally:
             self._test_engine_adapter.close()
@@ -1215,6 +1233,7 @@ class Context(BaseContext):
             graph=ReferenceGraph(self.models.values()),
             metrics=self._metrics,
             dialect=dialect or self.config.dialect,
+            default_catalog=self.default_catalog,
         )
 
     def migrate(self) -> None:
@@ -1237,14 +1256,19 @@ class Context(BaseContext):
         The schema file contains all columns and types of external models, allowing for more robust
         lineage, validation, and optimizations.
         """
-        if not self._model_registry:
+        if not self._models:
             self.load(update_schemas=False)
 
         for path, config in self.configs.items():
             create_schema_file(
                 path=path / c.SCHEMA_YAML,
-                model_registry=self._model_registry.filter(
-                    lambda x: self.config_for_node(x) is config
+                models=UniqueKeyDict(
+                    "models",
+                    {
+                        fqn: model
+                        for fqn, model in self._models.items()
+                        if self.config_for_node(model) is config
+                    },
                 ),
                 adapter=self._engine_adapter,
                 state_reader=self.state_reader,
@@ -1305,8 +1329,20 @@ class Context(BaseContext):
             for name, snapshot in self.snapshots.items()
         }
 
+    @property
+    def _model_name_mapping(self) -> t.Dict[str, Model]:
+        """Mapping of model name to model."""
+        return t.cast(
+            t.Dict[str, Model],
+            {
+                snapshot.name: snapshot.node
+                for snapshot in self.snapshots.values()
+                if snapshot.is_model
+            },
+        )
+
     def _snapshots(
-        self, model_registry_override: t.Optional[ModelRegistry] = None
+        self, models_override: t.Optional[UniqueKeyDict[str, Model]] = None
     ) -> t.Dict[str, Snapshot]:
         prod = self.state_reader.get_environment(c.PROD)
         remote_snapshots = (
@@ -1317,20 +1353,20 @@ class Context(BaseContext):
             if prod
             else {}
         )
-        model_registry = model_registry_override or self._model_registry
+        models = models_override or self._models
         local_nodes: t.Dict[str, t.Union[Model, StandaloneAudit]] = {
-            **model_registry.name_to_model,
+            **models,
             **self._standalone_audits,
         }
-        local_nodes_and_fqn_models = {**local_nodes, **model_registry.fqn_to_model}
+        # local_nodes_and_fqn_models = {**local_nodes, **model_registry.fqn_to_model}
         nodes = local_nodes.copy()
         audits = self._audits.copy()
         projects = {config.project for config in self.configs.values()}
 
-        for name, snapshot in remote_snapshots.items():
+        for snapshot in remote_snapshots.values():
+            name = snapshot.fqn
             if name not in nodes and snapshot.node.project not in projects:
                 nodes[name] = snapshot.node
-
                 if snapshot.is_model:
                     for audit in snapshot.audits:
                         if name not in audits:
@@ -1341,7 +1377,7 @@ class Context(BaseContext):
             fingerprint_cache: t.Dict[str, SnapshotFingerprint] = {}
 
             for node in nodes.values():
-                if node.name not in local_nodes and node.name in remote_snapshots:
+                if node.fqn not in local_nodes and node.name in remote_snapshots:
                     snapshot = remote_snapshots[node.name]
                     ttl = snapshot.ttl
                 else:
@@ -1350,7 +1386,7 @@ class Context(BaseContext):
 
                 snapshot = Snapshot.from_node(
                     node,
-                    nodes=local_nodes_and_fqn_models,
+                    nodes=nodes,
                     audits=audits,
                     cache=fingerprint_cache,
                     ttl=ttl,
@@ -1362,7 +1398,7 @@ class Context(BaseContext):
         stored_snapshots = self.state_reader.get_snapshots(snapshots.values())
 
         unrestorable_snapshot_names = {
-            s.name for s in stored_snapshots.values() if s.name in local_nodes and s.unrestorable
+            s.fqn for s in stored_snapshots.values() if s.fqn in local_nodes and s.unrestorable
         }
         if unrestorable_snapshot_names:
             for name in unrestorable_snapshot_names:

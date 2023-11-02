@@ -9,6 +9,7 @@ from dbt.contracts.relation import Policy
 from sqlglot import exp, parse_one
 from sqlglot.helper import seq_get
 from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
+from sqlglot.optimizer.qualify_tables import qualify_tables
 
 from sqlmesh.core.dialect import normalize_model_name, schema_
 from sqlmesh.core.engine_adapter import EngineAdapter
@@ -186,9 +187,13 @@ class RuntimeAdapter(BaseAdapter):
             **table_mapping,
         }
 
+    def _get_database(self, database: t.Optional[str]) -> t.Optional[str]:
+        return database or self.engine_adapter.default_catalog
+
     def get_relation(
         self, database: t.Optional[str], schema: str, identifier: str
     ) -> t.Optional[BaseRelation]:
+        database = self._get_database(database)
         mapped_table = self._map_table_name(database, schema, identifier)
         schema, identifier = mapped_table.db, mapped_table.name
 
@@ -203,6 +208,7 @@ class RuntimeAdapter(BaseAdapter):
         return seq_get(matching_relations, 0)
 
     def list_relations(self, database: t.Optional[str], schema: str) -> t.List[BaseRelation]:
+        database = self._get_database(database)
         reference_relation = self.relation_type.create(database=database, schema=schema)
         return self.list_relations_without_caching(reference_relation)
 
@@ -253,12 +259,12 @@ class RuntimeAdapter(BaseAdapter):
 
     def create_schema(self, relation: BaseRelation) -> None:
         if relation.schema is not None:
-            schema = self._normalize(schema_(relation.schema, relation.database))
+            schema = self._normalize(schema_(relation.schema, self._get_database(relation.database)))
             self.engine_adapter.create_schema(schema)
 
     def drop_schema(self, relation: BaseRelation) -> None:
         if relation.schema is not None:
-            schema = self._normalize(schema_(relation.schema, relation.database))
+            schema = self._normalize(schema_(relation.schema, self._get_database(relation.database)))
             self.engine_adapter.drop_schema(schema)
 
     def drop_relation(self, relation: BaseRelation) -> None:
@@ -278,7 +284,10 @@ class RuntimeAdapter(BaseAdapter):
             self.engine_adapter.fetchdf if fetch else self.engine_adapter.execute  # type: ignore
         )
 
-        expression = parse_one(sql, read=self.engine_adapter.dialect)
+        expression = qualify_tables(
+            parse_one(sql, read=self.engine_adapter.dialect),
+            catalog=self.engine_adapter.default_catalog,
+        )
         expression = exp.replace_tables(expression, self.table_mapping, copy=False)
 
         if auto_begin:
@@ -325,7 +334,7 @@ class RuntimeAdapter(BaseAdapter):
 
     def _relation_to_table(self, relation: BaseRelation) -> exp.Table:
         assert relation.identifier is not None
-        return exp.table_(relation.identifier, db=relation.schema, catalog=relation.database)
+        return exp.table_(relation.identifier, db=relation.schema, catalog=self._get_database(relation.database) if relation.schema else relation.database)
 
     def _normalize(self, table: exp.Table) -> exp.Table:
         if self.quote_policy.identifier and isinstance(table.this, exp.Identifier):

@@ -13,10 +13,8 @@ from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlmesh.core.dialect import normalize_model_name, schema_
 from sqlmesh.core.engine_adapter import EngineAdapter
 from sqlmesh.core.model import Model, PythonModel, SqlModel
+from sqlmesh.utils import UniqueKeyDict
 from sqlmesh.utils.errors import SQLMeshError
-
-if t.TYPE_CHECKING:
-    from sqlmesh.core.model.registry import ModelRegistry
 
 Row = t.Dict[str, t.Any]
 
@@ -34,10 +32,11 @@ class ModelTest(unittest.TestCase):
         body: t.Dict[str, t.Any],
         test_name: str,
         model: Model,
-        model_registry: ModelRegistry,
+        models: UniqueKeyDict[str, Model],
         engine_adapter: EngineAdapter,
         dialect: str | None,
         path: pathlib.Path | None,
+        default_catalog: str | None = None,
     ) -> None:
         """ModelTest encapsulates a unit test for a model.
 
@@ -45,7 +44,7 @@ class ModelTest(unittest.TestCase):
             body: A dictionary that contains test metadata like inputs and outputs.
             test_name: The name of the test.
             model: The model that is being tested.
-            model_registry: All models to use for expansion and mapping of physical locations.
+            models: All models to use for expansion and mapping of physical locations.
             engine_adapter: The engine adapter to use.
             dialect: The models' dialect, used for normalization purposes.
             path: An optional path to the test definition yaml file.
@@ -53,16 +52,20 @@ class ModelTest(unittest.TestCase):
         self.body = body
         self.test_name = test_name
         self.model = model
-        self.model_registry = model_registry
+        self.models = models
         self.engine_adapter = engine_adapter
         self.path = path
+        self.default_catalog = default_catalog
+        self.dialect = dialect
 
         self._normalize_test(dialect)
 
-        inputs = self.body.get("inputs", {})
+        inputs = [
+            normalize_model_name(input, default_catalog=default_catalog, dialect=dialect)
+            for input in self.body.get("inputs", {})
+        ]
         for depends_on in self.model.depends_on:
-            all_names = self.model_registry.get_both_names(depends_on) | {depends_on}
-            if not all_names.intersection(inputs):
+            if depends_on not in inputs:
                 _raise_error(f"Incomplete test, missing input for table {depends_on}", path)
 
         super().__init__()
@@ -72,8 +75,8 @@ class ModelTest(unittest.TestCase):
         for table_name, rows in self.body.get("inputs", {}).items():
             df = pd.DataFrame.from_records(rows)  # noqa
             columns_to_types: dict[str, exp.DataType] = {}
-            if table_name in self.model_registry:
-                columns_to_types = self.model_registry[table_name].columns_to_types or {}
+            if table_name in self.models:
+                columns_to_types = self.models[table_name].columns_to_types or {}
 
             if not columns_to_types:
                 for i, v in rows[0].items():
@@ -83,7 +86,7 @@ class ModelTest(unittest.TestCase):
 
             columns_to_types = {k: v for k, v in columns_to_types.items() if k in df}
 
-            fqft = _fully_qualified_test_fixture_table(table_name, self.model_registry)
+            fqft = _fully_qualified_test_fixture_table(table_name)
             if fqft.db:
                 self.engine_adapter.create_schema(
                     schema_(fqft.args["db"], fqft.args.get("catalog"))
@@ -95,9 +98,7 @@ class ModelTest(unittest.TestCase):
         """Drop all input tables"""
         for table in self.body.get("inputs", {}):
             self.engine_adapter.drop_view(
-                _fully_qualified_test_fixture_name(table, self.model_registry)
-                if table in self.model_registry
-                else table
+                _fully_qualified_test_fixture_name(table) if table in self.models else table
             )
 
     def assert_equal(self, expected: pd.DataFrame, actual: pd.DataFrame) -> None:
@@ -136,17 +137,18 @@ class ModelTest(unittest.TestCase):
     def create_test(
         body: t.Dict[str, t.Any],
         test_name: str,
-        model_registry: ModelRegistry,
+        models: UniqueKeyDict[str, Model],
         engine_adapter: EngineAdapter,
         dialect: str | None,
         path: pathlib.Path | None,
+        default_catalog: str | None = None,
     ) -> ModelTest:
         """Create a SqlModelTest or a PythonModelTest.
 
         Args:
             body: A dictionary that contains test metadata like inputs and outputs.
             test_name: The name of the test.
-            model_registry: All models to use for expansion and mapping of physical locations.
+            models: All models to use for expansion and mapping of physical locations.
             engine_adapter: The engine adapter to use.
             dialect: The models' dialect, used for normalization purposes.
             path: An optional path to the test definition yaml file.
@@ -157,18 +159,20 @@ class ModelTest(unittest.TestCase):
         if "outputs" not in body:
             _raise_error("Incomplete test, missing outputs", path)
 
-        model_name = normalize_model_name(body["model"], dialect=dialect)
-        if model_name not in model_registry:
+        model_name = normalize_model_name(
+            body["model"], default_catalog=default_catalog, dialect=dialect
+        )
+        if model_name not in models:
             _raise_error(f"Model '{model_name}' was not found", path)
 
-        model = model_registry[model_name]
+        model = models[model_name]
         if isinstance(model, SqlModel):
             return SqlModelTest(
-                body, test_name, model, model_registry, engine_adapter, dialect, path
+                body, test_name, model, models, engine_adapter, dialect, path, default_catalog
             )
         if isinstance(model, PythonModel):
             return PythonModelTest(
-                body, test_name, model, model_registry, engine_adapter, dialect, path
+                body, test_name, model, models, engine_adapter, dialect, path, default_catalog
             )
 
         raise TestError(f"Model '{model_name}' is an unsupported model type for testing at {path}")
@@ -195,7 +199,9 @@ class ModelTest(unittest.TestCase):
 
         def _normalize_sources(sources: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
             return {
-                normalize_model_name(name, dialect=dialect): _normalize_rows(rows)
+                normalize_model_name(
+                    name, default_catalog=self.default_catalog, dialect=dialect
+                ): _normalize_rows(rows)
                 for name, rows in sources.items()
             }
 
@@ -211,7 +217,9 @@ class ModelTest(unittest.TestCase):
         if query:
             outputs["query"] = _normalize_rows(query)
 
-        self.body["model"] = normalize_model_name(self.body["model"], dialect=dialect)
+        self.body["model"] = normalize_model_name(
+            self.body["model"], default_catalog=self.default_catalog, dialect=dialect
+        )
 
 
 class SqlModelTest(ModelTest):
@@ -239,10 +247,11 @@ class SqlModelTest(ModelTest):
     def runTest(self) -> None:
         # For tests we just use the model name for the table reference and we don't want to expand
         mapping = {
-            self.model_registry[name].fqn
-            if name in self.model_registry
-            else name: _fully_qualified_test_fixture_name(name, self.model_registry)
-            for name in self.model_registry.all_names | self.body.get("inputs", {}).keys()
+            name: _fully_qualified_test_fixture_name(name)
+            for name in [
+                normalize_model_name(name, self.default_catalog, self.dialect)
+                for name in self.models.keys() | self.body.get("inputs", {}).keys()
+            ]
         }
         query = self.model.render_query_or_raise(
             **self.body.get("vars", {}),
@@ -265,10 +274,11 @@ class PythonModelTest(ModelTest):
         body: dict[str, t.Any],
         test_name: str,
         model: PythonModel,
-        model_registry: ModelRegistry,
+        models: UniqueKeyDict[str, Model],
         engine_adapter: EngineAdapter,
         dialect: str | None,
         path: pathlib.Path | None,
+        default_catalog: str | None = None,
     ) -> None:
         """PythonModelTest encapsulates a unit test for a Python model.
 
@@ -276,18 +286,20 @@ class PythonModelTest(ModelTest):
             body: A dictionary that contains test metadata like inputs and outputs.
             test_name: The name of the test.
             model: The Python model that is being tested.
-            model_registry: All models to use for expansion and mapping of physical locations.
+            models: All models to use for expansion and mapping of physical locations.
             engine_adapter: The engine adapter to use.
             dialect: The models' dialect, used for normalization purposes.
             path: An optional path to the test definition yaml file.
         """
         from sqlmesh.core.test.context import TestExecutionContext
 
-        super().__init__(body, test_name, model, model_registry, engine_adapter, dialect, path)
+        super().__init__(
+            body, test_name, model, models, engine_adapter, dialect, path, default_catalog
+        )
 
         self.context = TestExecutionContext(
             engine_adapter=engine_adapter,
-            model_registry=model_registry,
+            models=models,
         )
 
     def runTest(self) -> None:
@@ -304,14 +316,14 @@ class PythonModelTest(ModelTest):
             self.assert_equal(expected_df, actual_df)
 
 
-def _fully_qualified_test_fixture_table(name: str, model_registry: ModelRegistry) -> exp.Table:
-    fqt = model_registry[name].fqt if name in model_registry else exp.to_table(name)
+def _fully_qualified_test_fixture_table(name: str) -> exp.Table:
+    fqt = exp.to_table(name)
     fqt.set("this", f"{fqt.this}__fixture")
     return fqt
 
 
-def _fully_qualified_test_fixture_name(name: str, model_registry: ModelRegistry) -> str:
-    return _fully_qualified_test_fixture_table(name, model_registry).sql()
+def _fully_qualified_test_fixture_name(name: str) -> str:
+    return _fully_qualified_test_fixture_table(name).sql()
 
 
 def _raise_error(msg: str, path: pathlib.Path | None) -> None:

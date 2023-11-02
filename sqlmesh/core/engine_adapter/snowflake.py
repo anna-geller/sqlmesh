@@ -46,7 +46,7 @@ class SnowflakeEngineAdapter(GetCurrentCatalogFromFunctionMixin):
 
             # See: https://stackoverflow.com/a/75627721
             for column, kind in columns_to_types.items():
-                if is_datetime64_any_dtype(df.dtypes[column]):
+                if is_datetime64_any_dtype(df.dtypes[column]):  # type: ignore
                     if kind.is_type("date"):  # type: ignore
                         df[column] = pd.to_datetime(df[column]).dt.date  # type: ignore
                     elif getattr(df.dtypes[column], "tz", None) is not None:  # type: ignore

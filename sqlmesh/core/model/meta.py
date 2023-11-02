@@ -8,6 +8,7 @@ from sqlglot.helper import ensure_collection, ensure_list
 from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 
 from sqlmesh.core import dialect as d
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.model.common import (
     bool_validator,
     parse_expressions,
@@ -199,18 +200,28 @@ class ModelMeta(_Node, extra="allow"):
     @field_validator_v1_args
     def _depends_on_validator(cls, v: t.Any, values: t.Dict[str, t.Any]) -> t.Optional[t.Set[str]]:
         dialect = values.get("dialect")
+        default_catalog = values.get("default_catalog")
 
         if isinstance(v, (exp.Array, exp.Tuple)):
             return {
                 d.normalize_model_name(
-                    table.name if table.is_string else table.sql(dialect=dialect), dialect=dialect
+                    table.name if table.is_string else table.sql(dialect=dialect),
+                    default_catalog=default_catalog,
+                    dialect=dialect,
                 )
                 for table in v.expressions
             }
         if isinstance(v, exp.Expression):
-            return {d.normalize_model_name(v.sql(dialect=dialect), dialect=dialect)}
+            return {
+                d.normalize_model_name(
+                    v.sql(dialect=dialect), default_catalog=default_catalog, dialect=dialect
+                )
+            }
         if hasattr(v, "__iter__") and not isinstance(v, str):
-            return {d.normalize_model_name(name, dialect=dialect) for name in v}
+            return {
+                d.normalize_model_name(name, default_catalog=default_catalog, dialect=dialect)
+                for name in v
+            }
 
         return v
 
@@ -298,7 +309,10 @@ class ModelMeta(_Node, extra="allow"):
 
     @classmethod
     def _normalize_name(cls, values: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
-        values["name"] = d.normalize_model_name(values["name"], dialect=values.get("dialect"))
+        # The model name does not contain a default catalog while the FQN does
+        values["name"] = d.normalize_model_name(
+            values["name"], default_catalog=None, dialect=values.get("dialect")
+        )
         return values
 
     @classmethod
@@ -409,12 +423,13 @@ class ModelMeta(_Node, extra="allow"):
 
     @property
     def fqt(self) -> exp.Table:
-        return d.set_default_catalog(self.name, default_catalog=self.default_catalog)
+        return exp.to_table(self.fqn)
 
     @property
     def fqn(self) -> str:
-        """Returns the fully qualified name of a model including the default catalog if set."""
-        return self.fqt.sql()
+        return normalize_model_name(
+            self.name, default_catalog=self.default_catalog, dialect=self.dialect
+        )
 
     @property
     def name_and_fqn_are_different(self) -> bool:

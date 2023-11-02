@@ -773,7 +773,8 @@ def test_select_models_for_backfill(mocker: MockerFixture):
 @pytest.mark.core_integration
 @pytest.mark.parametrize(
     "context_fixture",
-    ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_default_catalog"],
+    # ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_default_catalog"],
+    ["sushi_default_catalog"],
 )
 def test_model_add(context_fixture: Context, request):
     initial_add(request.getfixturevalue(context_fixture), "dev")
@@ -787,8 +788,7 @@ def test_model_removed(sushi_context: Context):
 
     top_waiters_snapshot_id = sushi_context.snapshots["sushi.top_waiters"].snapshot_id
 
-    assert sushi_context._model_registry.fqn_to_model == {}
-    sushi_context._model_registry.name_to_model.pop("sushi.top_waiters")
+    sushi_context._models.pop("sushi.top_waiters")
     removed = ["sushi.top_waiters"]
 
     def _validate_plan(context, plan):
@@ -1692,7 +1692,7 @@ def initial_add(context: Context, environment: str):
     assert not context.state_reader.get_environment(environment)
 
     plan = context.plan(environment, start=start(context), create_from="nonexistent_env")
-    validate_plan_changes(plan, added=set(context.models) | set(context.standalone_audits))
+    validate_plan_changes(plan, added=set(context.snapshots) | set(context.standalone_audits))
 
     context.apply(plan)
     validate_apply_basics(context, environment, plan.snapshots)

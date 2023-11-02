@@ -217,10 +217,10 @@ def test_seed_columns():
     assert sqlmesh_seed.column_descriptions == expected_column_descriptions
 
 
-@pytest.mark.parametrize("model", ["sushi.waiters", "sushi.waiter_names"])
-def test_hooks(sushi_test_dbt_context: Context, model: str):
+@pytest.mark.parametrize("model_fqn", ["memory.sushi.waiters", "memory.sushi.waiter_names"])
+def test_hooks(sushi_test_dbt_context: Context, model_fqn: str):
     engine_adapter = sushi_test_dbt_context.engine_adapter
-    waiters = sushi_test_dbt_context.models[model]
+    waiters = sushi_test_dbt_context.models[model_fqn]
 
     logger = logging.getLogger("sqlmesh.dbt.builtin")
     with patch.object(logger, "debug") as mock_logger:

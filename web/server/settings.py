@@ -67,7 +67,7 @@ def _get_loaded_context(path: str | Path, config: str, gateway: str) -> Context:
 
 @lru_cache()
 def _get_path_to_model_mapping(context: Context) -> dict[Path, Model]:
-    return {model._path: model for model in context._model_registry.models}
+    return {model._path: model for model in context._models.values()}
 
 
 async def get_path_mapping(settings: Settings = Depends(get_settings)) -> dict[Path, FileType]:

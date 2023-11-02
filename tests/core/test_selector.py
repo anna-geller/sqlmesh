@@ -9,9 +9,9 @@ from pytest_mock.plugin import MockerFixture
 from sqlmesh.core import dialect as d
 from sqlmesh.core.environment import Environment
 from sqlmesh.core.model import Model, SqlModel
-from sqlmesh.core.model.registry import ModelRegistry
 from sqlmesh.core.selector import Selector
 from sqlmesh.core.snapshot import SnapshotChangeCategory
+from sqlmesh.utils import UniqueKeyDict
 from sqlmesh.utils.errors import SQLMeshError
 
 
@@ -47,14 +47,15 @@ def test_select_models(mocker: MockerFixture, make_snapshot):
 
     added_model_schema = {"added_model": {"a": "INT"}}
 
-    local_model_registry = ModelRegistry()
-    local_model_registry.add(added_model)
-    local_model_registry.add(modified_model_v2.copy(update={"mapping_schema": added_model_schema}))
-    selector = Selector(state_reader_mock, local_model_registry)
+    local_models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
+    local_models[added_model.name] = added_model
+    local_models[modified_model_v2.name] = modified_model_v2.copy(
+        update={"mapping_schema": added_model_schema}
+    )
+    selector = Selector(state_reader_mock, local_models)
 
-    selection = selector.select_models(["added_model"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(["added_model"], env_name),
         {
             added_model.name: added_model,
             modified_model_v1.name: modified_model_v1.copy(
@@ -63,34 +64,23 @@ def test_select_models(mocker: MockerFixture, make_snapshot):
             removed_model.name: removed_model.copy(update={"mapping_schema": added_model_schema}),
         },
     )
-    assert selection.fqn_to_model == {}
-
-    selection = selector.select_models(
-        ["modified_model"], "missing_env", fallback_env_name=env_name
-    )
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(["modified_model"], "missing_env", fallback_env_name=env_name),
         {
             modified_model_v2.name: modified_model_v2,
             removed_model.name: removed_model,
         },
     )
-    assert selection.fqn_to_model == {}
-
-    selection = selector.select_models(["removed_model"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(["removed_model"], env_name),
         {
             modified_model_v1.name: modified_model_v1,
         },
     )
-    assert selection.fqn_to_model == {}
-
-    selection = selector.select_models(
-        ["added_model", "modified_model"], "missing_env", fallback_env_name=env_name
-    )
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(
+            ["added_model", "modified_model"], "missing_env", fallback_env_name=env_name
+        ),
         {
             added_model.name: added_model,
             modified_model_v2.name: modified_model_v2.copy(
@@ -99,11 +89,8 @@ def test_select_models(mocker: MockerFixture, make_snapshot):
             removed_model.name: removed_model.copy(update={"mapping_schema": added_model_schema}),
         },
     )
-    assert selection.fqn_to_model == {}
-
-    selection = selector.select_models(["+modified_model"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(["+modified_model"], env_name),
         {
             added_model.name: added_model,
             modified_model_v2.name: modified_model_v2.copy(
@@ -112,11 +99,8 @@ def test_select_models(mocker: MockerFixture, make_snapshot):
             removed_model.name: removed_model.copy(update={"mapping_schema": added_model_schema}),
         },
     )
-    assert selection.fqn_to_model == {}
-
-    selection = selector.select_models(["added_model+"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
+        selector.select_models(["added_model+"], env_name),
         {
             added_model.name: added_model,
             modified_model_v2.name: modified_model_v2.copy(
@@ -125,20 +109,14 @@ def test_select_models(mocker: MockerFixture, make_snapshot):
             removed_model.name: removed_model.copy(update={"mapping_schema": added_model_schema}),
         },
     )
-
-    selection = selector.select_models(["added_model", "modified_model", "removed_model"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
-        local_model_registry.name_to_model,
+        selector.select_models(["added_model", "modified_model", "removed_model"], env_name),
+        local_models,
     )
-    assert selection.fqn_to_model == local_model_registry.fqn_to_model == {}
-
-    selection = selector.select_models(["*_model", "removed_model"], env_name)
     _assert_models_equal(
-        selection.name_to_model,
-        local_model_registry.name_to_model,
+        selector.select_models(["*_model", "removed_model"], env_name),
+        local_models,
     )
-    assert selection.fqn_to_model == local_model_registry.fqn_to_model == {}
 
 
 def test_select_models_missing_env(mocker: MockerFixture, make_snapshot):
@@ -147,10 +125,10 @@ def test_select_models_missing_env(mocker: MockerFixture, make_snapshot):
     state_reader_mock = mocker.Mock()
     state_reader_mock.get_environment.return_value = None
 
-    local_model_registry = ModelRegistry()
-    local_model_registry.add(model)
+    local_models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
+    local_models[model.name] = model
 
-    selector = Selector(state_reader_mock, local_model_registry)
+    selector = Selector(state_reader_mock, local_models)
 
     with pytest.raises(SQLMeshError):
         selector.select_models([model.name], "missing_env")

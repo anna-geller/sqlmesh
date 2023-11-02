@@ -8,16 +8,16 @@ from sqlglot import exp
 from sqlglot.dialects.dialect import DialectType
 
 from sqlmesh.core.engine_adapter import EngineAdapter
-from sqlmesh.core.model.registry import ModelRegistry
+from sqlmesh.core.model.definition import Model
 from sqlmesh.core.state_sync import StateReader
-from sqlmesh.utils import yaml
+from sqlmesh.utils import UniqueKeyDict, yaml
 
 logger = logging.getLogger(__name__)
 
 
 def create_schema_file(
     path: Path,
-    model_registry: ModelRegistry,
+    models: UniqueKeyDict[str, Model],
     adapter: EngineAdapter,
     state_reader: StateReader,
     dialect: DialectType,
@@ -27,7 +27,7 @@ def create_schema_file(
 
     Args:
         path: The path to store the YAML file.
-        model_registry: Registry of models that contains both name and fqn
+        models: FQN to model
         adapter: The engine adapter.
         state_reader: The state reader.
         dialect: The dialect to serialize the schema as.
@@ -35,11 +35,11 @@ def create_schema_file(
     """
     external_tables = set()
 
-    for model in model_registry.models:
+    for model in models.values():
         if model.kind.is_external:
             external_tables.add(model.name)
         for dep in model.depends_on:
-            if dep not in model_registry:
+            if dep not in models:
                 external_tables.add(dep)
 
     # Make sure we don't convert internal models into external ones.

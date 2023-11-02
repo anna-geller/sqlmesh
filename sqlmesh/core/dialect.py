@@ -792,20 +792,23 @@ def set_default_catalog(
 ) -> exp.Table:
     table = exp.to_table(table)
 
-    if default_catalog and not table.catalog:
-        if not table.db:
-            raise SQLMeshError(f"Cannot set default catalog on table without schema: {table}")
-        table.set("catalog", exp.to_identifier(default_catalog))
+    if default_catalog and not table.catalog and table.db:
+        table.set("catalog", exp.parse_identifier(default_catalog))
 
     return table
 
 
-def normalize_model_name(table: str | exp.Table | exp.Column, dialect: DialectType = None) -> str:
+def normalize_model_name(
+    table: str | exp.Table | exp.Column,
+    default_catalog: t.Optional[str],
+    dialect: DialectType = None,
+) -> str:
     if isinstance(table, exp.Column):
         table = exp.table_(*reversed(table.parts[:-1]))  # type: ignore
     else:
         table = exp.to_table(table, dialect=dialect)
 
+    table = set_default_catalog(table, default_catalog)
     return exp.table_name(normalize_identifiers(table, dialect=dialect))
 
 
@@ -817,7 +820,9 @@ def extract_columns_to_types(query: exp.Subqueryable) -> t.Dict[str, exp.DataTyp
     }
 
 
-def find_tables(expression: exp.Expression, dialect: DialectType = None) -> t.Set[str]:
+def find_tables(
+    expression: exp.Expression, default_catalog: t.Optional[str], dialect: DialectType = None
+) -> t.Set[str]:
     """Find all tables referenced in a query.
 
     Args:
@@ -828,7 +833,7 @@ def find_tables(expression: exp.Expression, dialect: DialectType = None) -> t.Se
         A Set of all the table names.
     """
     return {
-        normalize_model_name(table, dialect=dialect)
+        normalize_model_name(table, default_catalog=default_catalog, dialect=dialect)
         for scope in traverse_scope(expression)
         for table in scope.tables
         if not isinstance(table.this, exp.Func) and exp.table_name(table) not in scope.cte_sources

@@ -15,7 +15,6 @@ from sqlmesh.core.config import (
 from sqlmesh.core.loader import LoadedProject, Loader
 from sqlmesh.core.macros import MacroRegistry
 from sqlmesh.core.model import Model, ModelCache
-from sqlmesh.core.model.registry import ModelRegistry
 from sqlmesh.dbt.basemodel import BMC, BaseModelConfig
 from sqlmesh.dbt.context import DbtContext
 from sqlmesh.dbt.profile import Profile
@@ -82,8 +81,8 @@ class DbtLoader(Loader):
 
     def _load_models(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry
-    ) -> ModelRegistry:
-        model_registry = ModelRegistry()
+    ) -> UniqueKeyDict[str, Model]:
+        models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
 
         project = self._load_project()
         context = project.context.copy()
@@ -102,11 +101,11 @@ class DbtLoader(Loader):
                 sqlmesh_model = cache.get_or_load_model(
                     model.path, lambda: self._to_sqlmesh(model, context)
                 )
-                model_registry.add(sqlmesh_model)
+                models[sqlmesh_model.fqn] = sqlmesh_model
 
-        model_registry.merge(self._load_external_models())
+        models.update(self._load_external_models())
 
-        return model_registry
+        return models
 
     def _load_audits(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry

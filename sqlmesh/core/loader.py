@@ -25,8 +25,7 @@ from sqlmesh.core.model import (
     create_external_model,
     load_sql_based_model,
 )
-from sqlmesh.core.model import model as model_registry_decorator
-from sqlmesh.core.model.registry import ModelRegistry
+from sqlmesh.core.model import model as model_registry
 from sqlmesh.utils import UniqueKeyDict
 from sqlmesh.utils.dag import DAG
 from sqlmesh.utils.errors import ConfigError
@@ -45,7 +44,7 @@ logger = logging.getLogger(__name__)
 # TODO: consider moving this to context
 def update_model_schemas(
     dag: DAG[str],
-    model_registry: ModelRegistry,
+    models: UniqueKeyDict[str, Model],
     context_path: Path,
     default_catalog: t.Optional[str] = None,
 ) -> None:
@@ -53,7 +52,7 @@ def update_model_schemas(
     optimized_query_cache: OptimizedQueryCache = OptimizedQueryCache(context_path / c.CACHE)
 
     for name in dag.sorted:
-        model = model_registry.get(name)
+        model = models.get(name)
 
         # External models don't exist in the context, so we need to skip them
         if not model:
@@ -78,7 +77,7 @@ def update_model_schemas(
 class LoadedProject:
     macros: MacroRegistry
     jinja_macros: JinjaMacroRegistry
-    model_registry: ModelRegistry
+    models: UniqueKeyDict[str, Model]
     audits: UniqueKeyDict[str, Audit]
     metrics: UniqueKeyDict[str, Metric]
     dag: DAG[str]
@@ -120,19 +119,19 @@ class Loader(abc.ABC):
         self._config_mtimes = {path: max(mtimes) for path, mtimes in config_mtimes.items()}
 
         macros, jinja_macros = self._load_scripts()
-        model_registry = self._load_models(macros, jinja_macros)
+        models = self._load_models(macros, jinja_macros)
 
-        for model in model_registry.models:
-            self._add_model_to_dag(model, model_registry)
+        for model in models.values():
+            self._add_model_to_dag(model)
 
         if update_schemas:
             update_model_schemas(
                 self._dag,
-                model_registry,
+                models,
                 self._context.path,
                 self._context.default_catalog,
             )
-            for model in model_registry.models:
+            for model in models.values():
                 # The model definition can be validated correctly only after the schema is set.
                 model.validate_definition()
 
@@ -141,7 +140,7 @@ class Loader(abc.ABC):
         project = LoadedProject(
             macros=macros,
             jinja_macros=jinja_macros,
-            model_registry=model_registry,
+            models=models,
             audits=self._load_audits(macros=macros, jinja_macros=jinja_macros),
             metrics=expand_metrics(metrics),
             dag=self._dag,
@@ -168,7 +167,7 @@ class Loader(abc.ABC):
     @abc.abstractmethod
     def _load_models(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry
-    ) -> ModelRegistry:
+    ) -> UniqueKeyDict[str, Model]:
         """Loads all models."""
 
     @abc.abstractmethod
@@ -180,8 +179,8 @@ class Loader(abc.ABC):
     def _load_metrics(self) -> UniqueKeyDict[str, MetricMeta]:
         return UniqueKeyDict("metrics")
 
-    def _load_external_models(self) -> ModelRegistry:
-        models = ModelRegistry()
+    def _load_external_models(self) -> UniqueKeyDict[str, Model]:
+        models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
         for context_path, config in self._context.configs.items():
             path = Path(context_path / c.SCHEMA_YAML)
 
@@ -197,17 +196,11 @@ class Loader(abc.ABC):
                             project=config.project,
                             default_catalog=self._context.default_catalog,
                         )
-                        models.add(model)
+                        models[model.fqn] = model
         return models
 
-    def _add_model_to_dag(self, model: Model, model_registry: ModelRegistry) -> None:
-        self._dag.add(
-            model.name,
-            filter(
-                None,
-                [model_registry.get_model_name(name_or_fqn) for name_or_fqn in model.depends_on],
-            ),
-        )
+    def _add_model_to_dag(self, model: Model) -> None:
+        self._dag.add(model.fqn, model.depends_on)
 
     def _track_file(self, path: Path) -> None:
         """Project file to track for modifications"""
@@ -262,22 +255,30 @@ class SqlMeshLoader(Loader):
 
     def _load_models(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry
-    ) -> ModelRegistry:
+    ) -> UniqueKeyDict[str, Model]:
         """
         Loads all of the models within the model directory with their associated
         audits into a Dict and creates the dag
         """
-        model_registry = self._load_sql_models(macros, jinja_macros)
-        model_registry.merge(self._load_external_models())
-        model_registry.merge(self._load_python_models())
+        models = self._load_sql_models(macros, jinja_macros)
+        models.update(self._load_external_models())
+        models.update(self._load_python_models())
 
-        return model_registry
+        # Make sure all models are unique by their name in addition to their FQN
+        seen_names: t.Set[str] = set()
+        for model in models.values():
+            if model.name in seen_names:
+                raise ConfigError(
+                    f"Model name '{model.name}' is not unique. Please make sure all models have unique names."
+                )
+            seen_names.add(model.name)
+        return models
 
     def _load_sql_models(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry
-    ) -> ModelRegistry:
+    ) -> UniqueKeyDict[str, Model]:
         """Loads the sql models into a Dict"""
-        model_registry = ModelRegistry()
+        models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
         for context_path, config in self._context.configs.items():
             cache = SqlMeshLoader._Cache(self, context_path)
 
@@ -313,19 +314,19 @@ class SqlMeshLoader(Loader):
                     )
 
                 model = cache.get_or_load_model(path, _load)
-                model_registry.add(model)
+                models[model.fqn] = model
 
                 if isinstance(model, SeedModel):
                     seed_path = model.seed_path
                     self._track_file(seed_path)
 
-        return model_registry
+        return models
 
-    def _load_python_models(self) -> ModelRegistry:
+    def _load_python_models(self) -> UniqueKeyDict[str, Model]:
         """Loads the python models into a Dict"""
-        model_registry = ModelRegistry()
-        decorator_registry = model_registry_decorator.registry()
-        decorator_registry.clear()
+        models: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
+        registry = model_registry.registry()
+        registry.clear()
         registered: t.Set[str] = set()
 
         for context_path, config in self._context.configs.items():
@@ -335,10 +336,10 @@ class SqlMeshLoader(Loader):
 
                 self._track_file(path)
                 import_python_file(path, context_path)
-                new = decorator_registry.keys() - registered
+                new = registry.keys() - registered
                 registered |= new
                 for name in new:
-                    model = decorator_registry[name].model(
+                    model = registry[name].model(
                         path=path,
                         module_path=context_path,
                         defaults=config.model_defaults.dict(),
@@ -348,9 +349,9 @@ class SqlMeshLoader(Loader):
                         project=config.project,
                         default_catalog=self._context.default_catalog,
                     )
-                    model_registry.add(model)
+                    models[model.fqn] = model
 
-        return model_registry
+        return models
 
     def _load_audits(
         self, macros: MacroRegistry, jinja_macros: JinjaMacroRegistry

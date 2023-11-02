@@ -90,4 +90,6 @@ class model(registry_decorator):
                 self.name, query, module_path=module_path, dialect=dialect, **common_kwargs
             )
 
-        return create_python_model(self.name, entrypoint, columns=self.columns, **common_kwargs)
+        return create_python_model(
+            self.name, entrypoint, dialect=dialect, columns=self.columns, **common_kwargs
+        )

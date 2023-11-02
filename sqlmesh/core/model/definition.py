@@ -22,7 +22,7 @@ from sqlglot.time import format_time
 
 from sqlmesh.core import constants as c
 from sqlmesh.core import dialect as d
-from sqlmesh.core.dialect import set_default_catalog
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.macros import MacroRegistry, macro
 from sqlmesh.core.model.common import expression_validator
 from sqlmesh.core.model.kind import (
@@ -633,7 +633,9 @@ class _Model(ModelMeta, frozen=True):
             query = self.render_query(optimize=False)
             if query is None:
                 return False
-            tables = d.find_tables(query, dialect=self.dialect)
+            tables = d.find_tables(
+                query, default_catalog=self.default_catalog, dialect=self.dialect
+            )
             return self.name in tables or self.fqn in tables
 
         return self._depends_on_past
@@ -1006,9 +1008,11 @@ class SqlModel(_SqlBasedModel):
 
             query = self.render_query(optimize=False)
             if query is not None:
-                self._depends_on |= d.find_tables(query, dialect=self.dialect)
+                self._depends_on |= d.find_tables(
+                    query, default_catalog=self.default_catalog, dialect=self.dialect
+                )
 
-            self._depends_on -= {self.name, self.fqn}
+            self._depends_on -= {self.fqn}
         return self._depends_on
 
     @property
@@ -1677,6 +1681,7 @@ def create_python_model(
     entrypoint: str,
     python_env: t.Dict[str, Executable],
     *,
+    dialect: t.Optional[str] = None,
     defaults: t.Optional[t.Dict[str, t.Any]] = None,
     path: Path = Path(),
     time_column_format: str = c.DEFAULT_TIME_COLUMN_FORMAT,
@@ -1700,11 +1705,11 @@ def create_python_model(
     # Find dependencies for python models by parsing code if they are not explicitly defined
     # Also remove self-references that are found
     depends_on = (
-        _parse_depends_on(entrypoint, python_env)
-        - {name, set_default_catalog(name, default_catalog).sql()}
+        _parse_depends_on(entrypoint, python_env, default_catalog, dialect=dialect)
         if depends_on is None and python_env is not None
         else depends_on
     )
+    depends_on -= {normalize_model_name(name, default_catalog=default_catalog, dialect=dialect)}
     return _create_model(
         PythonModel,
         name,
@@ -1879,7 +1884,12 @@ def _python_env(
     return serialized_env
 
 
-def _parse_depends_on(model_func: str, python_env: t.Dict[str, Executable]) -> t.Set[str]:
+def _parse_depends_on(
+    model_func: str,
+    python_env: t.Dict[str, Executable],
+    default_catalog: t.Optional[str],
+    dialect: t.Optional[str] = None,
+) -> t.Set[str]:
     """Parses the source of a model function and finds upstream dependencies based on calls to context."""
     env = prepare_env(python_env)
     depends_on = set()
@@ -1907,7 +1917,11 @@ def _parse_depends_on(model_func: str, python_env: t.Dict[str, Executable]) -> t
 
             try:
                 expression = to_source(table)
-                depends_on.add(eval(expression, env))
+                depends_on.add(
+                    normalize_model_name(
+                        eval(expression, env), default_catalog=default_catalog, dialect=dialect
+                    )
+                )
             except Exception:
                 raise ConfigError(
                     f"Error resolving dependencies for '{executable.path}'. References to context must be resolvable at parse time.\n\n{expression}"

@@ -6,6 +6,7 @@ import pandas as pd
 from pytest_mock.plugin import MockerFixture
 from sqlglot import exp, parse_one
 
+from sqlmesh.core.model.definition import Model
 from sqlmesh.core import constants as c
 from sqlmesh.core.config import Config, DuckDBConnectionConfig, GatewayConfig
 from sqlmesh.core.context import Context
@@ -13,6 +14,7 @@ from sqlmesh.core.dialect import parse
 from sqlmesh.core.model import SqlModel, create_external_model, load_sql_based_model
 from sqlmesh.core.schema_loader import create_schema_file
 from sqlmesh.core.snapshot import SnapshotChangeCategory
+from sqlmesh.utils import UniqueKeyDict
 from sqlmesh.utils.yaml import YAML
 
 

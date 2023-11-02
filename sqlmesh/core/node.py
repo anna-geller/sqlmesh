@@ -265,6 +265,10 @@ class _Node(PydanticModel):
     def depends_on(self) -> t.Set[str]:
         return set()
 
+    @property
+    def fqn(self) -> str:
+        return self.name
+
     def metadata_hash(self, audits: t.Dict[str, ModelAudit]) -> str:
         """
         Computes the metadata hash for the node.

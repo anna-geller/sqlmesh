@@ -196,7 +196,7 @@ class ModelAudit(PydanticModel, AuditMixin, frozen=True):
 
         node = snapshot_or_node if isinstance(snapshot_or_node, _Node) else snapshot_or_node.node
         this_model = (
-            node.name
+            node.fqn
             if isinstance(snapshot_or_node, _Node)
             else t.cast(Snapshot, snapshot_or_node).table_name(
                 deployability_index.is_deployable(snapshot_or_node)
@@ -301,7 +301,9 @@ class StandaloneAudit(_Node, AuditMixin):
 
             query = self.render_query(self)
             if query is not None:
-                self._depends_on |= d.find_tables(query, dialect=self.dialect)
+                self._depends_on |= d.find_tables(
+                    query, default_catalog=self.default_catalog, dialect=self.dialect
+                )
 
             self._depends_on -= {self.name}
         return self._depends_on

@@ -11,6 +11,7 @@ from sqlglot.helper import ensure_list
 
 from sqlmesh.core import dialect as d
 from sqlmesh.core.config.base import UpdateStrategy
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.model import Model
 from sqlmesh.dbt.column import (
     ColumnConfig,
@@ -238,13 +239,23 @@ class BaseModelConfig(GeneralConfig):
                 **model_context.jinja_globals,  # type: ignore
             }
         )
-
+        default_catalog = context._target.to_sqlmesh().get_catalog() if context._target else None
         return {
             "audits": [(test.name, {}) for test in self.tests],
             "columns": column_types_to_sqlmesh(self.columns, context.dialect) or None,
             "column_descriptions_": column_descriptions_to_sqlmesh(self.columns) or None,
-            "depends_on": {model.sql_name for model in model_context.refs.values()}.union(
-                {source.sql_name for source in model_context.sources.values()}
+            "depends_on": {
+                normalize_model_name(
+                    model.sql_name, default_catalog=default_catalog, dialect=context.dialect
+                )
+                for model in model_context.refs.values()
+            }.union(
+                {
+                    normalize_model_name(
+                        source.sql_name, default_catalog=default_catalog, dialect=context.dialect
+                    )
+                    for source in model_context.sources.values()
+                }
             ),
             "jinja_macros": jinja_macros,
             "path": self.path,
@@ -253,9 +264,7 @@ class BaseModelConfig(GeneralConfig):
             "post_statements": [d.jinja_statement(hook.sql) for hook in self.post_hook],
             "tags": self.tags,
             "physical_schema_override": context.sqlmesh_config.physical_schema_override,
-            "default_catalog": context._target.to_sqlmesh().get_catalog()
-            if context._target
-            else None,
+            "default_catalog": default_catalog if context._target else None,
             **self.sqlmesh_config_kwargs,
         }
 

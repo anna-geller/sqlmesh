@@ -1313,7 +1313,7 @@ WHERE
 
 def test_python_model_depends_on() -> None:
     @model(
-        name="model_with_depends_on", kind="full", columns={'"COL"': "int"}, depends_on=["foo.bar"]
+        name="model_with_depends_on", kind="full", columns={'"COL"': "int"}, depends_on={"foo.bar"}
     )
     def my_model(context, **kwargs):
         context.table("foo")

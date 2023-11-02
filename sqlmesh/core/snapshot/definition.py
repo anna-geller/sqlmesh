@@ -5,7 +5,6 @@ import typing as t
 from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import IntEnum
-from itertools import product
 
 from pydantic import Field
 from sqlglot import exp
@@ -528,7 +527,7 @@ class Snapshot(PydanticModel, SnapshotInfoMixin):
             node=node,
             parents=tuple(
                 SnapshotId(
-                    name=name,
+                    name=nodes[name].name,
                     identifier=fingerprint_from_node(
                         nodes[name],
                         nodes=nodes,
@@ -1022,6 +1021,10 @@ class Snapshot(PydanticModel, SnapshotInfoMixin):
         node = t.cast(Model, self.node)
         return node.fqt
 
+    @property
+    def fqn(self) -> str:
+        return self.model.fqn if self.is_model else self.name
+
     def _ensure_categorized(self) -> None:
         if not self.change_category:
             raise SQLMeshError(f"Snapshot {self.snapshot_id} has not been categorized yet.")
@@ -1276,7 +1279,7 @@ def _parents_from_node(
     parent_nodes = set()
     for parent in node.depends_on:
         if parent in nodes:
-            parent_nodes.add(nodes[parent].name)
+            parent_nodes.add(nodes[parent].fqn)
             if nodes[parent].is_model and t.cast(_Model, nodes[parent]).kind.is_embedded:
                 parent_nodes.update(_parents_from_node(nodes[parent], nodes))
 
@@ -1357,13 +1360,9 @@ def to_table_mapping(
 ) -> t.Dict[str, str]:
     deployability_index = deployability_index or DeployabilityIndex.all_deployable()
     return {
-        k: v
+        snapshot.fqn: snapshot.table_name(deployability_index.is_representative(snapshot))
         for snapshot in snapshots
         if snapshot.version and not snapshot.is_symbolic
-        for k, v in product(
-            [snapshot.name, snapshot.model.fqn] if snapshot.is_model else [snapshot.name],
-            [snapshot.table_name(deployability_index.is_representative(snapshot))],
-        )
     }
 
 

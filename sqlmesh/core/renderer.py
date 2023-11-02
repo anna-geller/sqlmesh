@@ -440,7 +440,7 @@ class QueryRenderer(BaseExpressionRenderer):
         original = query
         failure = False
         missing_deps = set()
-        all_deps = d.find_tables(query, dialect=self._dialect) - {self._model_name}
+        all_deps = d.find_tables(query, default_catalog=self._default_catalog, dialect=self._dialect) - {self._model_name, self._model_fqn}
         should_optimize = not schema.empty or not all_deps
 
         for dep in all_deps:

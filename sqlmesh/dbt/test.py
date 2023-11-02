@@ -138,6 +138,7 @@ class TestConfig(GeneralConfig):
         blocking = self.severity == Severity.ERROR
 
         audit: Audit
+        default_catalog = context._target.to_sqlmesh().get_catalog() if context._target else None
         if self.is_standalone:
             jinja_macros.add_globals({"this": self.relation_info})
             audit = StandaloneAudit(
@@ -146,11 +147,24 @@ class TestConfig(GeneralConfig):
                 skip=skip,
                 query=query,
                 jinja_macros=jinja_macros,
-                depends_on={model.sql_name for model in test_context.refs.values()}.union(
-                    {source.sql_name for source in test_context.sources.values()}
+                depends_on={
+                    d.normalize_model_name(
+                        model.sql_name, default_catalog=default_catalog, dialect=context.dialect
+                    )
+                    for model in test_context.refs.values()
+                }.union(
+                    {
+                        d.normalize_model_name(
+                            source.sql_name,
+                            default_catalog=default_catalog,
+                            dialect=context.dialect,
+                        )
+                        for source in test_context.sources.values()
+                    }
                 ),
                 tags=self.tags,
                 hash_raw_query=True,
+                default_catalog=default_catalog,
                 **self.sqlmesh_config_kwargs,
             )
         else:
