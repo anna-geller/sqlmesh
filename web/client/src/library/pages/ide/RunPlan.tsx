@@ -83,7 +83,7 @@ export default function RunPlan(): JSX.Element {
       className={clsx(
         'flex items-center',
         isNil(environment) &&
-        'opacity-50 pointer-events-none cursor-not-allowed',
+          'opacity-50 pointer-events-none cursor-not-allowed',
       )}
     >
       <div className="flex items-center relative">
@@ -91,7 +91,7 @@ export default function RunPlan(): JSX.Element {
           className={clsx(
             'mx-0',
             isFalse(environment.isInitial && environment.isDefault) &&
-            'rounded-none rounded-l-lg border-r',
+              'rounded-none rounded-l-lg border-r',
           )}
           variant={EnumVariant.Alternative}
           size={EnumSize.sm}
@@ -114,8 +114,9 @@ export default function RunPlan(): JSX.Element {
                 },
                 children: (
                   <div className="mt-5 pt-4">
-                    <h4 className="mb-2">{`${environments.size > 1 ? 'Select or ' : ''
-                      }Add Environment`}</h4>
+                    <h4 className="mb-2">{`${
+                      environments.size > 1 ? 'Select or ' : ''
+                    }Add Environment`}</h4>
                     <div className="flex items-center relative">
                       {environments.size > 1 && (
                         <SelectEnvironemnt
@@ -180,53 +181,77 @@ export function PlanChanges({
   const planOverview = useStorePlan(s => s.planOverview)
 
   return (
-    <span className="flex align-center h-full">
-      {isArrayNotEmpty(plan?.changes?.added) && (
-        <ChangesPreview
-          headline="Added Models"
-          type={EnumPlanChangeType.Add}
-          changes={plan!.changes!.added}
-        />
-      )}
-      {isArrayNotEmpty(plan?.changes?.modified.direct) && (
-        <ChangesPreview
-          headline="Direct Changes"
-          type={EnumPlanChangeType.Direct}
-          changes={plan!.changes!.modified.direct.map(
-            ({ model_name }) => model_name,
-          )}
-        />
-      )}
-      {isArrayNotEmpty(plan?.changes?.modified.indirect) && (
-        <ChangesPreview
-          headline="Indirectly Modified"
-          type={EnumPlanChangeType.Indirect}
-          changes={plan!.changes!.modified.indirect.map(ci => ci.model_name)}
-        />
-      )}
-      {isArrayNotEmpty(plan?.changes?.removed) && (
-        <ChangesPreview
-          headline="Removed Models"
-          type={EnumPlanChangeType.Remove}
-          changes={plan!.changes!.removed}
-        />
-      )}
-      {environment.isInitial && environment.isLocal && (
-        <span
-          title="New"
-          className="py-0.5 ml-2 px-2 first-child:ml-0 rounded-full bg-success-10 text-success-500 text-xs text-center font-bold"
-        >
-          New
-        </span>
-      )}
-      {[hasChanges, isLoading, environment.isLocal].every(isFalse) && (
-        <span
-          title="Latest"
-          className="ml-2 py-0.5 px-2 first-child:ml-0 rounded-full bg-neutral-10 text-xs text-center"
-        >
-          <span>Latest</span>
-        </span>
-      )}
+    <span className="flex align-center h-full w-full">
+      <>
+        {isRunningPlanOverview ? (
+          <span className="flex items-center ml-2">
+            <Spinner className="w-3 h-3 mr-1" />
+            <span className="inline-block text-xs text-neutral-500">
+              Checking...
+            </span>
+          </span>
+        ) : (
+          <>
+            {environment.isInitial && environment.isLocal && (
+              <span
+                title="New"
+                className="block ml-1 px-2 first-child:ml-0 rounded-full bg-success-10 text-success-500 text-xs text-center font-bold"
+              >
+                New
+              </span>
+            )}
+            {planOverview.isLatest &&
+              [
+                isRunningPlanOverview,
+                isRunningPlanApply,
+                environment.isLocal,
+              ].every(isFalse) && (
+                <span
+                  title="Latest"
+                  className="block ml-1 px-2 first-child:ml-0 rounded-full bg-neutral-10 text-xs text-center"
+                >
+                  <span>Latest</span>
+                </span>
+              )}
+            {isArrayNotEmpty(planOverview.added) && (
+              <ChangesPreview
+                headline="Added Models"
+                type={EnumPlanChangeType.Add}
+                changes={planOverview.added ?? []}
+              />
+            )}
+            {isArrayNotEmpty(planOverview.modified?.direct) && (
+              <ChangesPreview
+                headline="Direct Changes"
+                type={EnumPlanChangeType.Direct}
+                changes={
+                  planOverview.modified?.direct.map(
+                    ({ model_name }) => model_name,
+                  ) ?? []
+                }
+              />
+            )}
+            {isArrayNotEmpty(planOverview.modified?.indirect) && (
+              <ChangesPreview
+                headline="Indirectly Modified"
+                type={EnumPlanChangeType.Indirect}
+                changes={
+                  planOverview.modified?.indirect.map(
+                    ({ model_name }) => model_name,
+                  ) ?? []
+                }
+              />
+            )}
+            {isArrayNotEmpty(planOverview.removed) && (
+              <ChangesPreview
+                headline="Removed Models"
+                type={EnumPlanChangeType.Remove}
+                changes={planOverview.removed ?? []}
+              />
+            )}
+          </>
+        )}
+      </>
     </span>
   )
 }
@@ -275,13 +300,13 @@ export function SelectEnvironemnt({
             variant={EnumVariant.Alternative}
             size={size}
             disabled={disabled}
-            className={clsx(className)}
+            className={clsx(className, 'bg-neutral-10')}
           >
             <span
               className={clsx(
                 'block overflow-hidden truncate',
                 (environment.isLocal || disabled) &&
-                'text-neutral-600 dark:text-neutral-300',
+                  'text-neutral-600 dark:text-neutral-300',
                 environment.isSynchronized && 'text-primary-500',
               )}
             >
@@ -292,8 +317,8 @@ export function SelectEnvironemnt({
                 className={clsx(
                   'h-4 w-4',
                   disabled
-                    ? 'text-neutral-600 dark:text-neutral-300'
-                    : 'text-secondary-500 dark:text-primary-500',
+                    ? 'text-neutral-400 dark:text-neutral-200'
+                    : 'text-neutral-800 dark:text-neutral-200',
                 )}
                 aria-hidden="true"
               />
@@ -328,7 +353,7 @@ export function SelectEnvironemnt({
                           'flex justify-between items-center pl-2 pr-1 py-1 cursor-pointer overflow-auto',
                           active && 'bg-primary-10',
                           env === environment &&
-                          'pointer-events-none cursor-default bg-secondary-10',
+                            'pointer-events-none cursor-default bg-secondary-10',
                         )}
                       >
                         <div className="flex items-start">
@@ -521,15 +546,15 @@ function ChangesPreview({
             className={clsx(
               'flex items-center ml-1 px-2 rounded-full text-xs font-bold text-neutral-100 cursor-default border border-inherit',
               type === EnumPlanChangeType.Add &&
-              'bg-success-500 border-success-500',
+                'bg-success-500 border-success-500',
               type === EnumPlanChangeType.Remove &&
-              'bg-danger-500 border-danger-500',
+                'bg-danger-500 border-danger-500',
               type === EnumPlanChangeType.Direct &&
-              'bg-secondary-500 border-secondary-500',
+                'bg-secondary-500 border-secondary-500',
               type === EnumPlanChangeType.Indirect &&
-              'bg-warning-500 border-warning-500',
+                'bg-warning-500 border-warning-500',
               type === EnumPlanChangeType.Default &&
-              'bg-neutral-500 border-neutral-500',
+                'bg-neutral-500 border-neutral-500',
             )}
           >
             {changes.length}

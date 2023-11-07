@@ -8,6 +8,7 @@ import {
   ModelEnvironment,
 } from '~/models/environment'
 import { isNil, isStringEmptyOrNil } from '~/utils'
+import { persist } from 'zustand/middleware'
 
 interface ContextStore {
   version?: string
@@ -20,6 +21,8 @@ interface ContextStore {
   pinnedEnvironments: ModelEnvironment[]
   models: Map<string, ModelSQLMeshModel>
   lastActiveModel?: ModelSQLMeshModel
+  splitPaneSizes: number[]
+  setSplitPaneSizes: (splitPaneSizes: number[]) => void
   setLastActiveModel: (lastActiveModel?: ModelSQLMeshModel) => void
   setVersion: (version?: string) => void
   setIsRunningPlan: (isRunningPlan: boolean) => void
@@ -48,226 +51,255 @@ interface ContextStore {
 const environments = new Set(ModelEnvironment.getEnvironments())
 const environment = environments.values().next().value
 
-export const useStoreContext = create<ContextStore>((set, get) => ({
-  version: undefined,
-  isRunningPlan: false,
-  showConfirmation: false,
-  confirmations: [],
-  environment,
-  environments,
-  defaultEnvironment: undefined,
-  pinnedEnvironments: [],
-  initialStartDate: undefined,
-  initialEndDate: undefined,
-  models: new Map(),
-  setIsRunningPlan(isRunningPlan) {
-    set(() => ({
-      isRunningPlan,
-    }))
-  },
-  setVersion(version) {
-    set(() => ({
-      version,
-    }))
-  },
-  setShowConfirmation(showConfirmation) {
-    set(() => ({
-      showConfirmation,
-    }))
-  },
-  addConfirmation(confirmation) {
-    set(s => {
-      s.confirmations.push(confirmation)
+export const useStoreContext = create(
+  persist<ContextStore, [], [], Pick<ContextStore, 'splitPaneSizes'>>(
+    (set, get) => ({
+      version: undefined,
+      isRunningPlan: false,
+      showConfirmation: false,
+      confirmations: [],
+      environment,
+      environments,
+      defaultEnvironment: undefined,
+      pinnedEnvironments: [],
+      initialStartDate: undefined,
+      initialEndDate: undefined,
+      models: new Map(),
+      splitPaneSizes: [30, 70],
+      setSplitPaneSizes(splitPaneSizes) {
+        set(() => ({
+          splitPaneSizes,
+        }))
+      },
+      setLastActiveModel(lastActiveModel) {
+        set(() => ({
+          lastActiveModel,
+        }))
+      },
+      setIsRunningPlan(isRunningPlan) {
+        set(() => ({
+          isRunningPlan,
+        }))
+      },
+      setVersion(version) {
+        set(() => ({
+          version,
+        }))
+      },
+      setShowConfirmation(showConfirmation) {
+        set(() => ({
+          showConfirmation,
+        }))
+      },
+      addConfirmation(confirmation) {
+        set(s => {
+          s.confirmations.push(confirmation)
 
-      return {
-        confirmations: Array.from(s.confirmations),
-      }
-    })
-  },
-  removeConfirmation() {
-    const s = get()
+          return {
+            confirmations: Array.from(s.confirmations),
+          }
+        })
+      },
+      removeConfirmation() {
+        const s = get()
 
-    s.confirmations.shift()
+        s.confirmations.shift()
 
-    set(() => ({
-      confirmations: Array.from(s.confirmations),
-    }))
-  },
-  setModels(models = []) {
-    const s = get()
+        set(() => ({
+          confirmations: Array.from(s.confirmations),
+        }))
+      },
+      setModels(models = []) {
+        const s = get()
 
-    set(() => ({
-      models: models.reduce((acc: Map<string, ModelSQLMeshModel>, model) => {
-        let tempModel = s.models.get(model.path) ?? s.models.get(model.name)
+        set(() => ({
+          models: models.reduce(
+            (acc: Map<string, ModelSQLMeshModel>, model) => {
+              let tempModel =
+                s.models.get(model.path) ?? s.models.get(model.name)
 
-        if (isNil(tempModel)) {
-          tempModel = new ModelSQLMeshModel(model)
-        } else {
-          tempModel.update(model)
-        }
+              if (isNil(tempModel)) {
+                tempModel = new ModelSQLMeshModel(model)
+              } else {
+                tempModel.update(model)
+              }
 
-        acc.set(model.name, tempModel)
-        acc.set(model.path, tempModel)
+              acc.set(model.name, tempModel)
+              acc.set(model.path, tempModel)
 
-        return acc
-      }, new Map()),
-    }))
-  },
-  getNextEnvironment() {
-    return get().environments.values().next().value
-  },
-  isExistingEnvironment(environment) {
-    const s = get()
+              return acc
+            },
+            new Map(),
+          ),
+        }))
+      },
+      getNextEnvironment() {
+        return get().environments.values().next().value
+      },
+      isExistingEnvironment(environment) {
+        const s = get()
 
-    if ((environment as ModelEnvironment).isModel)
-      return s.environments.has(environment as ModelEnvironment)
+        if ((environment as ModelEnvironment).isModel)
+          return s.environments.has(environment as ModelEnvironment)
 
-    let hasEnvironment = false
+        let hasEnvironment = false
 
-    s.environments.forEach(env => {
-      if (env.name === (environment as EnvironmentName)) {
-        hasEnvironment = true
-      }
-    })
+        s.environments.forEach(env => {
+          if (env.name === (environment as EnvironmentName)) {
+            hasEnvironment = true
+          }
+        })
 
-    return hasEnvironment
-  },
-  setEnvironment(environment) {
-    set(() => {
-      ModelEnvironment.save({
-        environment,
-      })
+        return hasEnvironment
+      },
+      setEnvironment(environment) {
+        set(() => {
+          ModelEnvironment.save({
+            environment,
+          })
 
-      return {
-        environment,
-      }
-    })
-  },
-  addLocalEnvironment(localEnvironment, created_from) {
-    set(s => {
-      if (isStringEmptyOrNil(localEnvironment)) return s
+          return {
+            environment,
+          }
+        })
+      },
+      addLocalEnvironment(localEnvironment, created_from) {
+        set(s => {
+          if (isStringEmptyOrNil(localEnvironment)) return s
 
-      const environment = new ModelEnvironment(
-        {
-          name: localEnvironment,
-        },
-        EnumRelativeLocation.Local,
-        created_from,
-      )
-
-      s.environments.add(environment)
-
-      s.setEnvironment(environment)
-
-      ModelEnvironment.save({
-        environments: Array.from(s.environments),
-      })
-
-      return {
-        environments: new Set(s.environments),
-      }
-    })
-  },
-  removeLocalEnvironment(localEnvironment) {
-    set(s => {
-      s.environments.delete(localEnvironment)
-
-      ModelEnvironment.save({
-        environments: Array.from(s.environments),
-      })
-
-      return {
-        environments: new Set(s.environments),
-      }
-    })
-  },
-  addSynchronizedEnvironments(envs = [], defaultEnvironment, pinnedEnvs = []) {
-    set(s => {
-      const environments = Array.from(s.environments)
-
-      envs.forEach(env => {
-        let environment = environments.find(
-          ({ name: envNameLocal }) => env.name === envNameLocal,
-        )
-
-        if (isNil(environment)) {
-          environment = new ModelEnvironment(
-            env,
-            EnumRelativeLocation.Synchronized,
+          const environment = new ModelEnvironment(
+            {
+              name: localEnvironment,
+            },
+            EnumRelativeLocation.Local,
+            created_from,
           )
 
-          environments.push(environment)
-        } else {
-          environment.update(env)
-          environment.setType(EnumRelativeLocation.Synchronized)
-        }
+          s.environments.add(environment)
 
-        if (environment.isInitial && environment.isDefault) {
           s.setEnvironment(environment)
-        }
-      })
 
-      pinnedEnvs.forEach(envName => {
-        const environment = environments.find(
-          ({ name: envNameLocal }) => envName === envNameLocal,
-        )
+          ModelEnvironment.save({
+            environments: Array.from(s.environments),
+          })
 
-        if (isNil(environment)) {
-          environments.push(
-            new ModelEnvironment(
-              {
-                name: envName,
-              },
-              EnumRelativeLocation.Local,
-              undefined,
-              true,
-            ),
+          return {
+            environments: new Set(s.environments),
+          }
+        })
+      },
+      removeLocalEnvironment(localEnvironment) {
+        set(s => {
+          s.environments.delete(localEnvironment)
+
+          ModelEnvironment.save({
+            environments: Array.from(s.environments),
+          })
+
+          return {
+            environments: new Set(s.environments),
+          }
+        })
+      },
+      addSynchronizedEnvironments(
+        envs = [],
+        defaultEnvironment,
+        pinnedEnvs = [],
+      ) {
+        set(s => {
+          const environments = Array.from(s.environments)
+
+          envs.forEach(env => {
+            let environment = environments.find(
+              ({ name: envNameLocal }) => env.name === envNameLocal,
+            )
+
+            if (isNil(environment)) {
+              environment = new ModelEnvironment(
+                env,
+                EnumRelativeLocation.Synchronized,
+              )
+
+              environments.push(environment)
+            } else {
+              environment.update(env)
+              environment.setType(EnumRelativeLocation.Synchronized)
+            }
+
+            if (environment.isInitial && environment.isDefault) {
+              s.setEnvironment(environment)
+            }
+          })
+
+          pinnedEnvs.forEach(envName => {
+            const environment = environments.find(
+              ({ name: envNameLocal }) => envName === envNameLocal,
+            )
+
+            if (isNil(environment)) {
+              environments.push(
+                new ModelEnvironment(
+                  {
+                    name: envName,
+                  },
+                  EnumRelativeLocation.Local,
+                  undefined,
+                  true,
+                ),
+              )
+            } else {
+              environment.isPinned = true
+            }
+          })
+
+          ModelEnvironment.save({ environments })
+          ModelEnvironment.sort(environments)
+
+          const profileEnv = ModelEnvironment.getEnvironment()
+          let prodEnv = environments.find(({ name }) => name === 'prod')
+          let storedEnv = environments.find(
+            ({ name }) => name === profileEnv?.name,
           )
-        } else {
-          environment.isPinned = true
-        }
-      })
+          let defaultEnv = environments.find(
+            ({ name }) => name === defaultEnvironment,
+          )
 
-      ModelEnvironment.save({ environments })
-      ModelEnvironment.sort(environments)
+          environments.forEach(env => {
+            switch (env.name) {
+              case 'prod':
+                prodEnv = env
+                break
+              case profileEnv?.name:
+                storedEnv = env
+                break
+              case defaultEnvironment:
+                defaultEnv = env
+            }
+          })
 
-      const profileEnv = ModelEnvironment.getEnvironment()
-      let prodEnv = environments.find(({ name }) => name === 'prod')
-      let storedEnv = environments.find(({ name }) => name === profileEnv?.name)
-      let defaultEnv = environments.find(
-        ({ name }) => name === defaultEnvironment,
-      )
+          const currentEnv = storedEnv ?? defaultEnv ?? s.environment
 
-      environments.forEach(env => {
-        switch (env.name) {
-          case 'prod':
-            prodEnv = env
-            break
-          case profileEnv?.name:
-            storedEnv = env
-            break
-          case defaultEnvironment:
-            defaultEnv = env
-        }
-      })
+          return {
+            environment: isStringEmptyOrNil(prodEnv?.id) ? prodEnv : currentEnv,
+            defaultEnvironment: defaultEnv,
+            pinnedEnvironments: environments.filter(env =>
+              pinnedEnvs.includes(env.name),
+            ),
+            environments: new Set(environments),
+          }
+        })
+      },
+      hasSynchronizedEnvironments() {
+        const s = get()
 
-      const currentEnv = storedEnv ?? defaultEnv ?? s.environment
-
-      return {
-        environment: isStringEmptyOrNil(prodEnv?.id) ? prodEnv : currentEnv,
-        defaultEnvironment: defaultEnv,
-        pinnedEnvironments: environments.filter(env =>
-          pinnedEnvs.includes(env.name),
-        ),
-        environments: new Set(environments),
-      }
-    })
-  },
-  hasSynchronizedEnvironments() {
-    const s = get()
-
-    return Array.from(s.environments).some(
-      ({ type }) => type === EnumRelativeLocation.Synchronized,
-    )
-  },
-}))
+        return Array.from(s.environments).some(
+          ({ type }) => type === EnumRelativeLocation.Synchronized,
+        )
+      },
+    }),
+    {
+      name: 'context',
+      partialize: s => ({ splitPaneSizes: s.splitPaneSizes }),
+    },
+  ),
+)

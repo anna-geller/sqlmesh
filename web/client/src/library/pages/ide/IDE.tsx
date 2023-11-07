@@ -5,7 +5,6 @@ import {
   useApiEnvironments,
   useApiPlanRun,
 } from '../../../api'
-import { useStorePlan } from '../../../context/plan'
 import { useChannelEvents } from '../../../api/channels'
 import {
   isArrayEmpty,
@@ -36,6 +35,7 @@ import {
 import { type PlanOverviewTracker } from '@models/tracker-plan-overview'
 import { type PlanApplyTracker } from '@models/tracker-plan-apply'
 import { type PlanCancelTracker } from '@models/tracker-plan-cancel'
+import { useStorePlan } from '@context/plan'
 
 export default function PageIDE(): JSX.Element {
   const location = useLocation()
@@ -59,9 +59,12 @@ export default function PageIDE(): JSX.Element {
     s => s.hasSynchronizedEnvironments,
   )
 
-  const planState = useStorePlan(s => s.state)
-  const setState = useStorePlan(s => s.setState)
-  const setActivePlan = useStorePlan(s => s.setActivePlan)
+  const planOverview = useStorePlan(s => s.planOverview)
+  const planApply = useStorePlan(s => s.planApply)
+  const planCancel = useStorePlan(s => s.planCancel)
+  const setPlanOverview = useStorePlan(s => s.setPlanOverview)
+  const setPlanApply = useStorePlan(s => s.setPlanApply)
+  const setPlanCancel = useStorePlan(s => s.setPlanCancel)
 
   const selectedFile = useStoreProject(s => s.selectedFile)
   const setProject = useStoreProject(s => s.setProject)

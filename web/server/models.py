@@ -105,6 +105,7 @@ class Directory(BaseModel):
 class Meta(BaseModel):
     version: str
     has_running_task: bool = False
+    modules: t.List[str] = []
 
 
 class ChangeDirect(BaseModel):

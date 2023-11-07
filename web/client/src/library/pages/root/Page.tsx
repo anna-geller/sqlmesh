@@ -1,5 +1,3 @@
-import React, { useEffect, useState } from 'react'
-import { isArrayNotEmpty, isFalse, isNil, isNotNil } from '~/utils'
 import {
   FolderIcon,
   DocumentTextIcon,
@@ -8,6 +6,7 @@ import {
   ExclamationTriangleIcon,
   PlayCircleIcon,
 } from '@heroicons/react/24/solid'
+import clsx from 'clsx'
 import {
   FolderIcon as OutlineFolderIcon,
   DocumentTextIcon as OutlineDocumentTextIcon,
@@ -23,14 +22,14 @@ import { Divider } from '@components/divider/Divider'
 import SplitPane from '@components/splitPane/SplitPane'
 import { useStoreContext } from '@context/context'
 import { useIDE } from '../ide/context'
-import { PlanChanges, SelectEnvironemnt } from '../ide/RunPlan'
+import { useStorePlan } from '@context/plan'
 import { useApiPlanRun } from '@api/index'
-import clsx from 'clsx'
-import { EnumPlanState, type PlanState, useStorePlan } from '@context/plan'
+import { isFalse } from '@utils/index'
+import { PlanChanges, SelectEnvironemnt } from '../ide/RunPlan'
 import { EnumSize, EnumVariant } from '~/types/enum'
-import { type ContextEnvironment } from '@api/client'
+import { type ModelPlanOverviewTracker } from '@models/tracker-plan-overview'
+import { type ModelPlanApplyTracker } from '@models/tracker-plan-apply'
 import Spinner from '@components/logo/Spinner'
-import ActivePlan from '../ide/ActivePlan'
 
 export default function Page({
   sidebar,
@@ -180,41 +179,16 @@ export default function Page({
 function EnvironmentDetails(): JSX.Element {
   const environment = useStoreContext(s => s.environment)
 
-  const activePlan = useStorePlan(s => s.activePlan)
-  const planState = useStorePlan(s => s.state)
+  const planOverview = useStorePlan(s => s.planOverview)
+  const planApply = useStorePlan(s => s.planApply)
 
-  const setInitialDates = useStoreContext(s => s.setInitialDates)
   const hasSynchronizedEnvironments = useStoreContext(
     s => s.hasSynchronizedEnvironments,
   )
 
-  const [hasChanges, setHasChanges] = useState(false)
-  const [plan, setPlan] = useState<ContextEnvironment | undefined>()
-
-  const { data: dataPlan, isFetching } = useApiPlanRun(
-    environment.name,
-    {
-      planOptions: { skip_tests: true, include_unmodified: true },
-    },
-    undefined,
-    { enabled: true },
-  )
-
-  useEffect(() => {
-    if (isNil(dataPlan)) return
-
-    setPlan(dataPlan)
-    setInitialDates(dataPlan.start, dataPlan.end)
-    setHasChanges(
-      [
-        dataPlan.changes?.added,
-        dataPlan.changes?.removed,
-        dataPlan.changes?.modified?.direct,
-        dataPlan.changes?.modified?.indirect,
-        dataPlan.changes?.modified?.metadata,
-      ].some(isArrayNotEmpty),
-    )
-  }, [dataPlan])
+  const { isFetching } = useApiPlanRun(environment.name, {
+    planOptions: { skip_tests: true, include_unmodified: true },
+  })
 
   const showSelectEnvironmentButton =
     (isFalse(environment.isDefault) || hasSynchronizedEnvironments()) &&
@@ -223,30 +197,20 @@ function EnvironmentDetails(): JSX.Element {
   return (
     <div className="h-8 flex w-full items-center justify-end py-0.5 text-neutral-500">
       <div className="px-2 flex items-center">
-        <PlanStatus
-          planState={planState}
-          isLoading={isFetching}
-          className="mr-2"
+        <PlanStatus className="mr-2" />
+        <PlanChanges
+          environment={environment}
+          isRunningPlanOverview={isFetching || planOverview.isRunning}
+          isRunningPlanApply={planApply.isRunning}
         />
-        {planState === EnumPlanState.Applying && isNotNil(activePlan) && (
-          <ActivePlan plan={activePlan} />
-        )}
-        {planState !== EnumPlanState.Applying && (
-          <PlanChanges
-            environment={environment}
-            plan={plan}
-            hasChanges={hasChanges}
-            isLoading={isFetching}
-          />
-        )}
       </div>
       {showSelectEnvironmentButton && (
         <SelectEnvironemnt
           className="border-none h-6 !m-0"
           size={EnumSize.sm}
           onSelect={env => {
-            setPlan(undefined)
-            setHasChanges(false)
+            // setPlan(undefined)
+            // setHasChanges(false)
           }}
         />
       )}
@@ -254,25 +218,13 @@ function EnvironmentDetails(): JSX.Element {
   )
 }
 
-function PlanStatus({
-  planState,
-  isLoading,
-  className,
-}: {
-  isLoading: boolean
-  planState: PlanState
-  className?: string
-}): JSX.Element {
-  const shouldSkip =
-    planState === EnumPlanState.Init || planState === EnumPlanState.Finished
-  const isRunning =
-    planState === EnumPlanState.Running ||
-    planState === EnumPlanState.Applying ||
-    planState === EnumPlanState.Cancelling
+function PlanStatus({ className }: { className?: string }): JSX.Element {
+  const planOverview = useStorePlan(s => s.planOverview)
+  const planApply = useStorePlan(s => s.planApply)
 
-  return shouldSkip && isFalse(isLoading) ? (
-    <></>
-  ) : (
+  const isRunning = planApply.isRunning || planOverview.isRunning
+
+  return isRunning ? (
     <span
       className={clsx(
         'flex items-center ml-2 py-0.5 px-3 bg-neutral-10 rounded-full',
@@ -286,19 +238,20 @@ function PlanStatus({
         />
       )}
       <span className="inline-block whitespace-nowrap text-xs text-neutral-500">
-        {getPlanStatus(planState, isLoading)}
+        {getPlanStatus(planOverview, planApply)}
       </span>
     </span>
+  ) : (
+    <></>
   )
 }
 
-function getPlanStatus(planState: PlanState, isLoading: boolean): string {
-  if (isLoading) return 'Getting Changes...'
-  if (planState === EnumPlanState.Running) return 'Running Plan...'
-  if (planState === EnumPlanState.Applying) return 'Applying Plan...'
-  if (planState === EnumPlanState.Cancelling) return 'Cancelling Plan...'
-  if (planState === EnumPlanState.Failed) return 'Last Plan Failed'
-  if (planState === EnumPlanState.Cancelled) return 'Last Plan Cancelled'
+function getPlanStatus(
+  planOverview: ModelPlanOverviewTracker,
+  planApply: ModelPlanApplyTracker,
+): string {
+  if (planApply.isRunning) return 'Applying Plan...'
+  if (planOverview.isRunning) return 'Getting Changes...'
 
-  return ''
+  return 'Latest'
 }
