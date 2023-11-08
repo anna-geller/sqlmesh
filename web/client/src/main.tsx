@@ -11,6 +11,7 @@ import App from './App'
 import IDEProvider, { type ErrorIDE } from './library/pages/ide/context'
 
 import './index.css'
+import { isNotNil } from './utils'
 
 export interface PropsComponent extends HTMLAttributes<HTMLElement> {}
 
@@ -50,7 +51,7 @@ function getRootNode(): HTMLElement {
 
   let elRoot = document.getElementById(id)
 
-  if (elRoot != null) return elRoot
+  if (isNotNil(elRoot)) return elRoot
 
   const elBody = document.body
   const firstChild = elBody.children[0]

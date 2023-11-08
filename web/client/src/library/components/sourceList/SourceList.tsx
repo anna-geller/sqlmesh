@@ -17,6 +17,7 @@ export default function SourceList<
   byDescription,
   to,
   variant = EnumVariant.Neutral,
+  disabled = false,
   className,
 }: {
   by: string
@@ -24,6 +25,7 @@ export default function SourceList<
   items?: TItem[]
   types?: TType
   byName?: string
+  disabled?: boolean
   byDescription?: string
   variant?: Variant
   className?: string
@@ -76,13 +78,17 @@ export default function SourceList<
             return (
               <li
                 key={id}
-                className={clsx('text-sm font-normal')}
+                className={clsx(
+                  'text-sm font-normal',
+                  disabled && 'cursor-not-allowed',
+                )}
               >
                 <NavLink
                   to={`${to}/${ModelSQLMeshModel.encodeName(id)}`}
                   className={({ isActive }) =>
                     clsx(
                       'block overflow-hidden px-2 py-1 rounded-md w-full text-sm font-bold',
+                      disabled && 'opacity-50 pointer-events-none',
                       isActive
                         ? variant === EnumVariant.Primary
                           ? 'text-primary-500 bg-primary-10'
@@ -111,26 +117,28 @@ export default function SourceList<
             )
           })}
       </ul>
-      <div className="px-2 w-full flex justify-between">
-        <Input
-          className="w-full !m-0"
-          size={EnumSize.sm}
-        >
-          {({ className }) => (
-            <Input.Textfield
-              className={clsx(className, 'w-full')}
-              value={filter}
-              placeholder="Filter items"
-              onInput={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setFilter(e.target.value)
-              }}
-            />
-          )}
-        </Input>
-        <div className="ml-1 px-3 bg-primary-10 text-primary-500 rounded-full text-xs flex items-center">
-          {filtered.length}
+      {filtered.length > 1 && (
+        <div className="px-2 w-full flex justify-between">
+          <Input
+            className="w-full !m-0"
+            size={EnumSize.sm}
+          >
+            {({ className }) => (
+              <Input.Textfield
+                className={clsx(className, 'w-full')}
+                value={filter}
+                placeholder="Filter items"
+                onInput={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFilter(e.target.value)
+                }}
+              />
+            )}
+          </Input>
+          <div className="ml-1 px-3 bg-primary-10 text-primary-500 rounded-full text-xs flex items-center">
+            {filtered.length}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

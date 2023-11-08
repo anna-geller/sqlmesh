@@ -43,6 +43,7 @@ export default function PageIDE(): JSX.Element {
 
   const { removeError, addError } = useIDE()
 
+  const modules = useStoreContext(s => s.modules)
   const isRunningPlan = useStoreContext(s => s.isRunningPlan)
   const setIsRunningPlan = useStoreContext(s => s.setIsRunningPlan)
   const showConfirmation = useStoreContext(s => s.showConfirmation)
@@ -232,7 +233,9 @@ export default function PageIDE(): JSX.Element {
 
   useEffect(() => {
     if (location.pathname === EnumRoutes.Ide) {
-      navigate(EnumRoutes.IdeEditor)
+      navigate(
+        modules.includes('editor') ? EnumRoutes.IdeEditor : EnumRoutes.IdeDocs,
+      )
     }
   }, [location])
 

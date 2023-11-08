@@ -14,15 +14,16 @@ import { EnumVariant } from '~/types/enum'
 import PlanApplyStageTracker from './PlanApplyStageTracker'
 import { useStoreContext } from '@context/context'
 import { useEffect, useState } from 'react'
+import { type ModelEnvironment } from '@models/environment'
 
-function Plan({ onClose }: { onClose: () => void }): JSX.Element {
+function Plan({ environment }: { environment: ModelEnvironment }): JSX.Element {
   const dispatch = usePlanDispatch()
   const { removeError } = useIDE()
 
   const { auto_apply } = usePlan()
 
+  const modules = useStoreContext(s => s.modules)
   const isRunningPlan = useStoreContext(s => s.isRunningPlan)
-  const environment = useStoreContext(s => s.environment)
 
   const planOverviewTracker = useStorePlan(s => s.planOverview)
   const planApplyTracker = useStorePlan(s => s.planApply)
@@ -34,18 +35,25 @@ function Plan({ onClose }: { onClose: () => void }): JSX.Element {
   const planPayload = usePlanPayload({ environment, isInitialPlanRun })
   const applyPayload = useApplyPayload({ isInitialPlanRun })
 
-  const { refetch: planRun, cancel: cancelRequestPlanRun } = useApiPlanRun(
-    environment.name,
-    planPayload,
-  )
-  const { refetch: planApply, cancel: cancelRequestPlanApply } =
-    useApiPlanApply(environment.name, applyPayload)
-  const { refetch: cancelPlan } = useApiCancelPlan()
+  const {
+    refetch: planRun,
+    cancel: cancelRequestPlanRun,
+    isFetching: isFetchingPlanRun,
+  } = useApiPlanRun(environment.name, planPayload)
+  const {
+    refetch: planApply,
+    cancel: cancelRequestPlanApply,
+    isFetching: isFetchingPlanApply,
+  } = useApiPlanApply(environment.name, applyPayload)
+  const { refetch: cancelPlan, isFetching: isFetchingPlanCancel } =
+    useApiCancelPlan()
 
   const [planAction, setPlanAction] = useState<PlanAction>(EnumPlanAction.Run)
 
   useEffect(() => {
-    if (
+    if (environment.name !== planOverviewTracker.environment) {
+      setPlanAction(EnumPlanAction.Run)
+    } else if (
       planOverviewTracker.isFinished &&
       (planApplyTracker.isFinished ||
         (isFalse(planOverviewTracker.isVirtualUpdate) &&
@@ -71,7 +79,7 @@ function Plan({ onClose }: { onClose: () => void }): JSX.Element {
     } else {
       setPlanAction(EnumPlanAction.Run)
     }
-  }, [planOverviewTracker, planApplyTracker, isRunningPlan])
+  }, [planOverviewTracker, planApplyTracker, isRunningPlan, environment])
 
   function cleanUp(): void {
     dispatch([
@@ -94,7 +102,6 @@ function Plan({ onClose }: { onClose: () => void }): JSX.Element {
     removeError(EnumErrorKey.RunPlan)
     removeError(EnumErrorKey.ApplyPlan)
     cleanUp()
-    onClose()
   }
 
   function cancel(): void {
@@ -157,28 +164,43 @@ function Plan({ onClose }: { onClose: () => void }): JSX.Element {
     })
   }
 
+  const isFetching =
+    isFetchingPlanRun || isFetchingPlanApply || isFetchingPlanCancel
+
   return (
     <div className="flex flex-col w-full h-full overflow-hidden">
       <PlanHeader />
-      <Divider />
       <div className="w-full h-full px-4 overflow-y-scroll hover:scrollbar scrollbar--vertical">
         {planAction === EnumPlanAction.Cancelling ? (
           <CancellingPlanApply />
-        ) : planApplyTracker.isRunning || planOverviewTracker.isFinished ? (
+        ) : planApplyTracker.isRunning &&
+          planApplyTracker.environment === environment.name ? (
           <PlanApplyStageTracker />
-        ) : (
+        ) : planOverviewTracker.isFinished &&
+          planOverviewTracker.environment === environment.name ? (
+          <PlanApplyStageTracker />
+        ) : modules.includes('plans') ? (
           <PlanOptions className="w-full" />
+        ) : (
+          <div className="w-full h-full p-4">
+            <div className="w-full h-full flex justify-center items-center p-4 bg-neutral-5 rounded-lg overflow-hidden">
+              No Preview
+            </div>
+          </div>
         )}
       </div>
       <Divider />
-      <PlanActions
-        planAction={planAction}
-        apply={apply}
-        run={run}
-        cancel={cancel}
-        close={close}
-        reset={reset}
-      />
+      {modules.includes('plans') && (
+        <PlanActions
+          planAction={planAction}
+          apply={apply}
+          run={run}
+          cancel={cancel}
+          close={close}
+          reset={reset}
+          disabled={isFetching}
+        />
+      )}
     </div>
   )
 }

@@ -56,23 +56,23 @@ export class ModelPlanTracker<
   get isFinished(): boolean {
     return (
       isTrue(this._current?.meta?.done) &&
-      this._current?.meta.status !== Status.init
+      this._current?.meta?.status !== Status.init
     )
   }
 
   get isRunning(): boolean {
     return (
       isFalseOrNil(this._current?.meta?.done) &&
-      this._current?.meta.status === Status.init
+      this._current?.meta?.status === Status.init
     )
   }
 
   get isSuccessed(): boolean {
-    return this.isFinished && this._current?.meta.status === Status.success
+    return this.isFinished && this._current?.meta?.status === Status.success
   }
 
   get isFailed(): boolean {
-    return this.isFinished && this._current?.meta.status === Status.success
+    return this.isFinished && this._current?.meta?.status === Status.success
   }
 
   get isEmpty(): boolean {

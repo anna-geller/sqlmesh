@@ -6,13 +6,13 @@ import {
   StarIcon,
 } from '@heroicons/react/24/solid'
 import clsx from 'clsx'
-import { useState, useEffect, Fragment, type MouseEvent } from 'react'
-import { apiDeleteEnvironment, useApiPlanRun } from '~/api'
+import { useState, Fragment, type MouseEvent } from 'react'
+import { apiDeleteEnvironment } from '~/api'
 import { useStoreContext } from '~/context/context'
 import { useStorePlan } from '~/context/plan'
 import { type ModelEnvironment } from '~/models/environment'
 import { EnumSide, EnumSize, EnumVariant, type Side } from '~/types/enum'
-import { isArrayNotEmpty, isFalse, isStringEmptyOrNil, isNil } from '~/utils'
+import { isArrayNotEmpty, isFalse, isStringEmptyOrNil } from '~/utils'
 import { Button, makeButton, type ButtonSize } from '@components/button/Button'
 import { Divider } from '@components/divider/Divider'
 import Input from '@components/input/Input'
@@ -23,151 +23,6 @@ import {
 } from '@components/plan/context'
 import PlanChangePreview from '@components/plan/PlanChangePreview'
 import { EnumErrorKey, useIDE } from './context'
-import { type ModelPlanOverviewTracker } from '@models/tracker-plan-overview'
-import { type ModelPlanApplyTracker } from '@models/tracker-plan-apply'
-
-export default function RunPlan(): JSX.Element {
-  console.log('RunPlan')
-  const { setIsPlanOpen } = useIDE()
-
-  const planOverview = useStorePlan(s => s.planOverview)
-  const planApply = useStorePlan(s => s.planApply)
-  const setPlanOverview = useStorePlan(s => s.setPlanOverview)
-
-  const isRunningPlan = useStoreContext(s => s.isRunningPlan)
-  const addConfirmation = useStoreContext(s => s.addConfirmation)
-  const setShowConfirmation = useStoreContext(s => s.setShowConfirmation)
-  const environment = useStoreContext(s => s.environment)
-  const environments = useStoreContext(s => s.environments)
-  const hasSynchronizedEnvironments = useStoreContext(
-    s => s.hasSynchronizedEnvironments,
-  )
-
-  const [shouldStartPlanAutomatically, setShouldStartPlanAutomatically] =
-    useState(false)
-
-  const { refetch: planRun, isFetching } = useApiPlanRun(environment.name, {
-    planOptions: { skip_tests: true, include_unmodified: true },
-  })
-
-  useEffect(() => {
-    if (shouldStartPlanAutomatically) {
-      startPlan()
-      setShouldStartPlanAutomatically(false)
-    }
-
-    if (isFalse(environment.isSynchronized)) return
-
-    void planRun()
-  }, [environment])
-
-  function startPlan(): void {
-    setIsPlanOpen(true)
-
-    planOverview.reset()
-
-    setPlanOverview(planOverview)
-  }
-
-  const showRunButton =
-    isFalse(environment.isDefault) || hasSynchronizedEnvironments()
-  const showSelectEnvironmentButton =
-    showRunButton &&
-    (isFalse(environment.isDefault) || isFalse(environment.isInitial))
-
-  const shouldDisableActions =
-    isFetching || planOverview.isRunning || planApply.isRunning
-
-  return (
-    <div
-      className={clsx(
-        'flex items-center',
-        isNil(environment) &&
-          'opacity-50 pointer-events-none cursor-not-allowed',
-      )}
-    >
-      <div className="flex items-center relative">
-        <Button
-          className={clsx(
-            'mx-0',
-            isFalse(environment.isInitial && environment.isDefault) &&
-              'rounded-none rounded-l-lg border-r',
-          )}
-          variant={EnumVariant.Alternative}
-          size={EnumSize.sm}
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation()
-
-            if (isRunningPlan) {
-              setIsPlanOpen(true)
-            } else if (
-              environment.isDefault &&
-              isFalse(environment.isInitial)
-            ) {
-              addConfirmation({
-                headline: 'Running Plan Directly On Prod Environment!',
-                description: `Are you sure you want to run your changes directly on prod? Safer choice will be to select or add new environment first.`,
-                yesText: `Yes, Run ${environment.name}`,
-                noText: 'No, Cancel',
-                action() {
-                  startPlan()
-                },
-                children: (
-                  <div className="mt-5 pt-4">
-                    <h4 className="mb-2">{`${
-                      environments.size > 1 ? 'Select or ' : ''
-                    }Add Environment`}</h4>
-                    <div className="flex items-center relative">
-                      {environments.size > 1 && (
-                        <SelectEnvironemnt
-                          className="mr-2"
-                          side="left"
-                          showAddEnvironment={false}
-                          onSelect={() => {
-                            setShouldStartPlanAutomatically(true)
-                            setShowConfirmation(false)
-                          }}
-                          size={EnumSize.md}
-                          disabled={shouldDisableActions}
-                        />
-                      )}
-                      <AddEnvironemnt
-                        className="w-full"
-                        size={EnumSize.md}
-                        onAdd={() => {
-                          setShouldStartPlanAutomatically(true)
-                          setShowConfirmation(false)
-                        }}
-                      />
-                    </div>
-                  </div>
-                ),
-              })
-            } else {
-              startPlan()
-            }
-          }}
-        >
-          {isRunningPlan && <Spinner className="w-3 h-3 mr-1" />}
-          <span className="inline-block">
-            {getPlanStatus(planOverview, planApply)}
-          </span>
-        </Button>
-        {showSelectEnvironmentButton && (
-          <SelectEnvironemnt
-            className="rounded-none rounded-r-lg border-l mx-0"
-            disabled={shouldDisableActions}
-          />
-        )}
-      </div>
-      <PlanChanges
-        environment={environment}
-        isRunningPlanOverview={isFetching || planOverview.isRunning}
-        isRunningPlanApply={planApply.isRunning}
-      />
-    </div>
-  )
-}
 
 export function PlanChanges({
   environment,
@@ -277,9 +132,12 @@ export function SelectEnvironemnt({
   const environments = useStoreContext(s => s.environments)
   const pinnedEnvironments = useStoreContext(s => s.pinnedEnvironments)
   const defaultEnvironment = useStoreContext(s => s.defaultEnvironment)
+  const isRunningPlan = useStoreContext(s => s.isRunningPlan)
   const setEnvironment = useStoreContext(s => s.setEnvironment)
   const removeLocalEnvironment = useStoreContext(s => s.removeLocalEnvironment)
-
+  const hasSynchronizedEnvironments = useStoreContext(
+    s => s.hasSynchronizedEnvironments,
+  )
   const ButtonMenu = makeButton<HTMLDivElement>(Menu.Button)
 
   function deleteEnvironment(env: ModelEnvironment): void {
@@ -292,6 +150,12 @@ export function SelectEnvironemnt({
       })
   }
 
+  const isDisabled =
+    disabled ||
+    isRunningPlan ||
+    (environment.isDefault &&
+      (isFalse(hasSynchronizedEnvironments()) || environment.isInitial))
+
   return (
     <Menu>
       {({ close }) => (
@@ -299,13 +163,13 @@ export function SelectEnvironemnt({
           <ButtonMenu
             variant={EnumVariant.Alternative}
             size={size}
-            disabled={disabled}
+            disabled={isDisabled}
             className={clsx(className, 'bg-neutral-10')}
           >
             <span
               className={clsx(
                 'block overflow-hidden truncate',
-                (environment.isLocal || disabled) &&
+                (environment.isLocal || isDisabled) &&
                   'text-neutral-600 dark:text-neutral-300',
                 environment.isSynchronized && 'text-primary-500',
               )}
@@ -316,7 +180,7 @@ export function SelectEnvironemnt({
               <ChevronDownIcon
                 className={clsx(
                   'h-4 w-4',
-                  disabled
+                  isDisabled
                     ? 'text-neutral-400 dark:text-neutral-200'
                     : 'text-neutral-800 dark:text-neutral-200',
                 )}
@@ -399,7 +263,8 @@ export function SelectEnvironemnt({
                               className="w-4 text-primary-500 dark:text-primary-100 mx-1"
                             />
                           )}
-                          {env.isLocal &&
+                          {showAddEnvironment &&
+                            env.isLocal &&
                             isFalse(env.isPinned) &&
                             env !== environment && (
                               <Button
@@ -415,7 +280,8 @@ export function SelectEnvironemnt({
                                 <MinusCircleIcon className="w-4 text-neutral-500 dark:text-neutral-100" />
                               </Button>
                             )}
-                          {isFalse(env.isDefault) &&
+                          {showAddEnvironment &&
+                            isFalse(env.isDefault) &&
                             env !== environment &&
                             env.isSynchronized &&
                             isFalse(pinnedEnvironments.includes(env)) && (
@@ -586,14 +452,4 @@ function ChangesPreview({
       )}
     </Popover>
   )
-}
-
-function getPlanStatus(
-  planOverview: ModelPlanOverviewTracker,
-  planApply: ModelPlanApplyTracker,
-): string {
-  if (planApply.isRunning) return 'Applying Plan...'
-  if (planOverview.isRunning) return 'Getting Changes...'
-
-  return 'Plan'
 }

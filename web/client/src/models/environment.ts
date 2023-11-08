@@ -1,7 +1,13 @@
 import { type PlanProgress } from '@context/plan'
 import { type Environment } from '~/api/client'
 import useLocalStorage from '~/hooks/useLocalStorage'
-import { isArrayEmpty, isFalse, isNotNil, isStringEmptyOrNil } from '~/utils'
+import {
+  isArrayEmpty,
+  isFalse,
+  isNil,
+  isNotNil,
+  isStringEmptyOrNil,
+} from '~/utils'
 
 export const EnumDefaultEnvironment = {
   Empty: '',
@@ -78,11 +84,13 @@ export class ModelEnvironment {
   }
 
   get isDefault(): boolean {
-    return this.name === EnumDefaultEnvironment.Prod
+    return isNil(this.name) || this.name === EnumDefaultEnvironment.Prod
   }
 
   get isInitial(): boolean {
-    return isStringEmptyOrNil(this._initial.plan_id)
+    return (
+      isNil(this._initial?.plan_id) || isStringEmptyOrNil(this._initial.plan_id)
+    )
   }
 
   get isLocal(): boolean {

@@ -24,7 +24,6 @@ import { useStoreContext } from '@context/context'
 import { useIDE } from '../ide/context'
 import { useStorePlan } from '@context/plan'
 import { useApiPlanRun } from '@api/index'
-import { isFalse } from '@utils/index'
 import { PlanChanges, SelectEnvironemnt } from '../ide/RunPlan'
 import { EnumSize, EnumVariant } from '~/types/enum'
 import { type ModelPlanOverviewTracker } from '@models/tracker-plan-overview'
@@ -41,6 +40,7 @@ export default function Page({
   const location = useLocation()
   const { errors } = useIDE()
 
+  const modules = useStoreContext(s => s.modules)
   const models = useStoreContext(s => s.models)
   const splitPaneSizes = useStoreContext(s => s.splitPaneSizes)
   const setSplitPaneSizes = useStoreContext(s => s.setSplitPaneSizes)
@@ -70,21 +70,23 @@ export default function Page({
         <Divider />
         <div className="px-1 flex max-h-8 w-full items-center relative">
           <div className="h-8 flex w-full items-center justify-center px-1 py-0.5 text-neutral-500">
-            <Link
-              title="File Explorer"
-              to={EnumRoutes.Editor}
-              className={clsx(
-                'mx-1 py-1 flex items-center rounded-full',
-                location.pathname.startsWith(EnumRoutes.Editor) &&
-                  'px-2 bg-neutral-10',
-              )}
-            >
-              {location.pathname.startsWith(EnumRoutes.Editor) ? (
-                <FolderIcon className="w-4" />
-              ) : (
-                <OutlineFolderIcon className="w-4" />
-              )}
-            </Link>
+            {modules.includes('editor') && (
+              <Link
+                title="File Explorer"
+                to={EnumRoutes.Editor}
+                className={clsx(
+                  'mx-1 py-1 flex items-center rounded-full',
+                  location.pathname.startsWith(EnumRoutes.Editor) &&
+                    'px-2 bg-neutral-10',
+                )}
+              >
+                {location.pathname.startsWith(EnumRoutes.Editor) ? (
+                  <FolderIcon className="w-4" />
+                ) : (
+                  <OutlineFolderIcon className="w-4" />
+                )}
+              </Link>
+            )}
             <Link
               title="Docs"
               to={EnumRoutes.Docs}
@@ -124,48 +126,54 @@ export default function Page({
                 </>
               )}
             </NavLink>
-            <Link
-              title="Tests"
-              to={EnumRoutes.Tests}
-              className={clsx(
-                'mx-0.5 py-1 flex items-center rounded-full',
-                location.pathname.startsWith(EnumRoutes.Tests) &&
-                  'px-2 bg-neutral-10',
-              )}
-            >
-              {location.pathname.startsWith(EnumRoutes.Tests) ? (
-                <DocumentCheckIcon className="w-4" />
-              ) : (
-                <OutlineDocumentCheckIcon className="w-4" />
-              )}
-            </Link>
-            <Link
-              title="Audits"
-              to={EnumRoutes.Audits}
-              className={clsx(
-                'mx-1 py-1 flex items-center rounded-full',
-                location.pathname.startsWith(EnumRoutes.Audits) &&
-                  'px-2 bg-neutral-10',
-              )}
-            >
-              {location.pathname.startsWith(EnumRoutes.Audits) ? (
-                <ShieldCheckIcon className="w-4" />
-              ) : (
-                <OutlineShieldCheckIcon className="w-4" />
-              )}
-            </Link>
-            <NavLink
-              title="Plan"
-              to={EnumRoutes.Plan}
-              className="mx-1 py-0.5 px-2 flex items-center rounded-full bg-success-10"
-            >
-              <b className="block mx-1 text-xs text-success-500">Plan</b>
-              {location.pathname.startsWith(EnumRoutes.Plan) ? (
-                <PlayCircleIcon className="text-success-500 w-5" />
-              ) : (
-                <OutlinePlayCircleIcon className="text-success-500 w-5" />
-              )}
-            </NavLink>
+            {modules.includes('tests') && (
+              <Link
+                title="Tests"
+                to={EnumRoutes.Tests}
+                className={clsx(
+                  'mx-0.5 py-1 flex items-center rounded-full',
+                  location.pathname.startsWith(EnumRoutes.Tests) &&
+                    'px-2 bg-neutral-10',
+                )}
+              >
+                {location.pathname.startsWith(EnumRoutes.Tests) ? (
+                  <DocumentCheckIcon className="w-4" />
+                ) : (
+                  <OutlineDocumentCheckIcon className="w-4" />
+                )}
+              </Link>
+            )}
+            {modules.includes('audits') && (
+              <Link
+                title="Audits"
+                to={EnumRoutes.Audits}
+                className={clsx(
+                  'mx-1 py-1 flex items-center rounded-full',
+                  location.pathname.startsWith(EnumRoutes.Audits) &&
+                    'px-2 bg-neutral-10',
+                )}
+              >
+                {location.pathname.startsWith(EnumRoutes.Audits) ? (
+                  <ShieldCheckIcon className="w-4" />
+                ) : (
+                  <OutlineShieldCheckIcon className="w-4" />
+                )}
+              </Link>
+            )}
+            {(modules.includes('plans') || modules.includes('plan-active')) && (
+              <NavLink
+                title="Plan"
+                to={EnumRoutes.Plan}
+                className="mx-1 py-0.5 px-2 flex items-center rounded-full bg-success-10"
+              >
+                <b className="block mx-1 text-xs text-success-500">Plan</b>
+                {location.pathname.startsWith(EnumRoutes.Plan) ? (
+                  <PlayCircleIcon className="text-success-500 w-5" />
+                ) : (
+                  <OutlinePlayCircleIcon className="text-success-500 w-5" />
+                )}
+              </NavLink>
+            )}
           </div>
         </div>
         <Divider />
@@ -178,42 +186,35 @@ export default function Page({
 
 function EnvironmentDetails(): JSX.Element {
   const environment = useStoreContext(s => s.environment)
+  const modules = useStoreContext(s => s.modules)
 
   const planOverview = useStorePlan(s => s.planOverview)
   const planApply = useStorePlan(s => s.planApply)
-
-  const hasSynchronizedEnvironments = useStoreContext(
-    s => s.hasSynchronizedEnvironments,
-  )
 
   const { isFetching } = useApiPlanRun(environment.name, {
     planOptions: { skip_tests: true, include_unmodified: true },
   })
 
-  const showSelectEnvironmentButton =
-    (isFalse(environment.isDefault) || hasSynchronizedEnvironments()) &&
-    (isFalse(environment.isDefault) || isFalse(environment.isInitial))
+  const withPlanModule = modules.includes('plans') || modules.includes('plan')
 
   return (
     <div className="h-8 flex w-full items-center justify-end py-0.5 text-neutral-500">
-      <div className="px-2 flex items-center">
-        <PlanStatus className="mr-2" />
-        <PlanChanges
-          environment={environment}
-          isRunningPlanOverview={isFetching || planOverview.isRunning}
-          isRunningPlanApply={planApply.isRunning}
-        />
-      </div>
-      {showSelectEnvironmentButton && (
-        <SelectEnvironemnt
-          className="border-none h-6 !m-0"
-          size={EnumSize.sm}
-          onSelect={env => {
-            // setPlan(undefined)
-            // setHasChanges(false)
-          }}
-        />
+      {withPlanModule && (
+        <div className="px-2 flex items-center">
+          <PlanStatus className="mr-2" />
+          <PlanChanges
+            environment={environment}
+            isRunningPlanOverview={isFetching || planOverview.isRunning}
+            isRunningPlanApply={planApply.isRunning}
+          />
+        </div>
       )}
+      <SelectEnvironemnt
+        className="border-none h-6 !m-0"
+        size={EnumSize.sm}
+        showAddEnvironment={withPlanModule}
+        disabled={isFetching || planOverview.isRunning || planApply.isRunning}
+      />
     </div>
   )
 }

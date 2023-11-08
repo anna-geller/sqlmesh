@@ -10,8 +10,10 @@ import { useApiMeta } from './api'
 import { useStoreContext } from '@context/context'
 
 export default function App(): JSX.Element {
+  const modules = useStoreContext(s => s.modules)
   const setVersion = useStoreContext(s => s.setVersion)
   const setIsRunningPlan = useStoreContext(s => s.setIsRunningPlan)
+  const setModules = useStoreContext(s => s.setModules)
 
   const { refetch: getMeta, cancel: cancelRequestMeta } = useApiMeta()
 
@@ -19,12 +21,15 @@ export default function App(): JSX.Element {
     void getMeta().then(({ data }) => {
       setVersion(data?.version)
       setIsRunningPlan(data?.has_running_task ?? false)
+      setModules(Array.from(new Set(modules.concat(data?.modules ?? []))))
     })
 
     return () => {
       void cancelRequestMeta()
     }
   }, [])
+
+  console.log({ router, modules })
 
   return (
     <>
@@ -41,7 +46,7 @@ export default function App(): JSX.Element {
             </div>
           }
         >
-          <RouterProvider router={router} />
+          <RouterProvider router={router(modules)} />
         </Suspense>
       </main>
       <Divider />

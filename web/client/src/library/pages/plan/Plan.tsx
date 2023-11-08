@@ -4,26 +4,41 @@ import SourceList from '@components/sourceList/SourceList'
 import { EnumRoutes } from '~/routes'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
+import { useStorePlan } from '@context/plan'
+import { isFalse, isNotNil } from '@utils/index'
 
 export default function PagePlan(): JSX.Element {
   const navigaete = useNavigate()
   const location = useLocation()
 
+  const modules = useStoreContext(s => s.modules)
   const environment = useStoreContext(s => s.environment)
   const environments = useStoreContext(s => s.environments)
 
+  const planOverview = useStorePlan(s => s.planOverview)
+  const planApply = useStorePlan(s => s.planApply)
+
   useEffect(() => {
-    if (
+    if (planApply.isRunning && isNotNil(planApply.environment)) {
+      const pathname = `${EnumRoutes.Plan}/environments/${planApply.environment}`
+
+      if (location.pathname !== pathname) {
+        navigaete(pathname)
+      }
+    } else if (
       location.pathname === EnumRoutes.Plan ||
       location.pathname === `${EnumRoutes.Plan}/environments`
     ) {
       navigaete(`${EnumRoutes.Plan}/environments/${environment.name}`)
     }
-  }, [location])
+  }, [location, planApply.isRunning])
 
   useEffect(() => {
     navigaete(`${EnumRoutes.Plan}/environments/${environment.name}`)
   }, [environment])
+
+  const withPlanModule =
+    modules.includes('plans') || modules.includes('plan-active')
 
   return (
     <Page
@@ -33,6 +48,12 @@ export default function PagePlan(): JSX.Element {
           byName="name"
           to={`${EnumRoutes.Plan}/environments`}
           items={Array.from(environments)}
+          disabled={
+            planOverview.isRunning ||
+            planApply.isRunning ||
+            isFalse(withPlanModule) ||
+            (environment.isDefault && environment.isInitial)
+          }
         />
       }
       content={<Outlet />}

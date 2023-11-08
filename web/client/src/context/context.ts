@@ -13,6 +13,7 @@ import { persist } from 'zustand/middleware'
 interface ContextStore {
   version?: string
   isRunningPlan: boolean
+  modules: string[]
   showConfirmation: boolean
   confirmations: Confirmation[]
   environment: ModelEnvironment
@@ -22,6 +23,7 @@ interface ContextStore {
   models: Map<string, ModelSQLMeshModel>
   lastActiveModel?: ModelSQLMeshModel
   splitPaneSizes: number[]
+  setModules: (modules: string[]) => void
   setSplitPaneSizes: (splitPaneSizes: number[]) => void
   setLastActiveModel: (lastActiveModel?: ModelSQLMeshModel) => void
   setVersion: (version?: string) => void
@@ -56,6 +58,7 @@ export const useStoreContext = create(
     (set, get) => ({
       version: undefined,
       isRunningPlan: false,
+      modules: ['docs', 'errors'],
       showConfirmation: false,
       confirmations: [],
       environment,
@@ -66,6 +69,11 @@ export const useStoreContext = create(
       initialEndDate: undefined,
       models: new Map(),
       splitPaneSizes: [30, 70],
+      setModules(modules) {
+        set(() => ({
+          modules,
+        }))
+      },
       setSplitPaneSizes(splitPaneSizes) {
         set(() => ({
           splitPaneSizes,
