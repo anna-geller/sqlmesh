@@ -29,8 +29,6 @@ export default function App(): JSX.Element {
     }
   }, [])
 
-  console.log({ router, modules })
-
   return (
     <>
       <Header />

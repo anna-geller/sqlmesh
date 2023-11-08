@@ -1078,6 +1078,12 @@
             "type": "boolean",
             "title": "Has Running Task",
             "default": false
+          },
+          "modules": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Modules",
+            "default": []
           }
         },
         "type": "object",
