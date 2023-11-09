@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import typing as t
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -33,24 +34,46 @@ def create_schema_file(
         dialect: The dialect to serialize the schema as.
         max_workers: The max concurrent workers to fetch columns.
     """
-    external_tables = set()
+    external_table_names = set()
 
+    possible_fqn_to_name_mapping = {}
     for model in models.values():
         if model.kind.is_external:
-            external_tables.add(model.name)
+            external_table_names.add(model.name)
         for dep in model.depends_on:
             if dep not in models:
-                external_tables.add(dep)
+                dep_table = exp.to_table(dep, dialect=dialect)
+                external_table_names.add(dep)
+                if dep_table.catalog:
+                    dep_table.set("catalog", None)
+                    dep_table_name = dep_table.sql(dialect=dialect)
+                    possible_fqn_to_name_mapping[dep] = dep_table_name
+                    external_table_names.add(dep_table_name)
 
     # Make sure we don't convert internal models into external ones.
-    existing_models = state_reader.nodes_exist(external_tables, exclude_external=True)
+    possible_existing_snapshots = state_reader.get_snapshots_by_name(
+        external_table_names, exclude_external=True
+    )
+    existing_models = set()
+    for possible_existing_snapshot in possible_existing_snapshots:
+        model_name = possible_fqn_to_name_mapping.get(possible_existing_snapshot.fqn)
+        if (
+            model_name
+            and (
+                possible_existing_snapshot.fqn != possible_existing_snapshot.name
+                and possible_existing_snapshot.name == model_name
+            )
+            or (possible_existing_snapshot.fqn == possible_existing_snapshot.name)
+        ):
+            existing_models.add(possible_existing_snapshot.fqn)
+
     if existing_models:
         logger.warning(
             "The following models already exist and can't be converted to external: %s."
             "Perhaps these models have been removed, while downstream models that reference them weren't updated accordingly",
             ", ".join(existing_models),
         )
-        external_tables -= existing_models
+        external_table_names -= existing_models
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
 
@@ -64,12 +87,12 @@ def create_schema_file(
         schemas = [
             {
                 "name": exp.to_table(table).sql(dialect=dialect),
-                "columns": {c: t.sql(dialect=dialect) for c, t in columns.items()},
+                "columns": {c: dtype.sql(dialect=dialect) for c, dtype in columns.items()},
             }
             for table, columns in sorted(
                 pool.map(
                     lambda table: (table, _get_columns(table)),
-                    external_tables,
+                    external_table_names,
                 )
             )
             if columns

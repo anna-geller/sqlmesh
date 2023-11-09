@@ -287,11 +287,13 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
             )
         }
 
-    def nodes_exist(self, names: t.Iterable[str], exclude_external: bool = False) -> t.Set[str]:
+    def get_snapshots_by_name(
+        self, names: t.Iterable[str], exclude_external: bool = False
+    ) -> t.Set[Snapshot]:
         names = set(names)
 
         if not names:
-            return names
+            return set()
 
         query = (
             exp.select("name")

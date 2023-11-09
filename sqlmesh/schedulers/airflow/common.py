@@ -47,7 +47,7 @@ class PlanApplicationRequest(PydanticModel):
     environment: Environment
     no_gaps: bool
     skip_backfill: bool
-    restatements: t.Dict[str, SnapshotInterval]
+    restatements: t.Dict[SnapshotId, SnapshotInterval]
     notification_targets: t.List[NotificationTarget]
     backfill_concurrent_tasks: int
     ddl_concurrent_tasks: int

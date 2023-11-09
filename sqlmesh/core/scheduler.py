@@ -20,6 +20,7 @@ from sqlmesh.core.snapshot import (
     missing_intervals,
 )
 from sqlmesh.core.snapshot.definition import Interval as SnapshotInterval
+from sqlmesh.core.snapshot.definition import SnapshotId
 from sqlmesh.core.state_sync import StateSync
 from sqlmesh.utils import format_exception
 from sqlmesh.utils.concurrency import concurrent_apply_to_dag
@@ -67,8 +68,10 @@ class Scheduler:
         notification_target_manager: t.Optional[NotificationTargetManager] = None,
     ):
         self.state_sync = state_sync
-        self.snapshots = {s.snapshot_id: s for s in snapshots}
-        self.snapshot_per_version = _resolve_one_snapshot_per_version(self.snapshots.values())
+        self.snapshot_mapping = {s.snapshot_id: s for s in snapshots}
+        self.snapshot_per_version = _resolve_one_snapshot_per_version(
+            self.snapshot_mapping.values()
+        )
         self.snapshot_evaluator = snapshot_evaluator
         self.max_workers = max_workers
         self.console = console or get_console()
@@ -82,7 +85,7 @@ class Scheduler:
         end: t.Optional[TimeLike] = None,
         execution_time: t.Optional[TimeLike] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
-        restatements: t.Optional[t.Dict[str, SnapshotInterval]] = None,
+        restatements: t.Optional[t.Dict[SnapshotId, SnapshotInterval]] = None,
         ignore_cron: bool = False,
         selected_snapshots: t.Optional[t.Set[str]] = None,
     ) -> SnapshotToBatches:
@@ -145,10 +148,7 @@ class Scheduler:
         """
         validate_date_range(start, end)
 
-        snapshots = {
-            **{p_sid.name: self.snapshots[p_sid] for p_sid in snapshot.parents},
-            snapshot.name: snapshot,
-        }
+        snapshots = {self.snapshot_mapping[p_sid] for p_sid in snapshot.parents} | {snapshot}
 
         if isinstance(snapshot.node, SeedModel) and not snapshot.node.is_hydrated:
             snapshot = self.state_sync.get_snapshots([snapshot], hydrate_seeds=True)[
@@ -192,7 +192,7 @@ class Scheduler:
         start: t.Optional[TimeLike] = None,
         end: t.Optional[TimeLike] = None,
         execution_time: t.Optional[TimeLike] = None,
-        restatements: t.Optional[t.Dict[str, SnapshotInterval]] = None,
+        restatements: t.Optional[t.Dict[SnapshotId, SnapshotInterval]] = None,
         ignore_cron: bool = False,
         selected_snapshots: t.Optional[t.Set[str]] = None,
         circuit_breaker: t.Optional[t.Callable[[], bool]] = None,
@@ -328,14 +328,14 @@ class Scheduler:
             if not intervals:
                 continue
             upstream_dependencies = [
-                (self.snapshots[p_sid], (interval, i))
+                (self.snapshot_mapping[p_sid], (interval, i))
                 for p_sid in snapshot.parents
-                if p_sid in self.snapshots
+                if p_sid in self.snapshot_mapping
                 for i, interval in enumerate(
                     intervals_per_snapshot_version.get(
                         (
-                            self.snapshots[p_sid].name,
-                            self.snapshots[p_sid].version_get_or_generate(),
+                            self.snapshot_mapping[p_sid].name,
+                            self.snapshot_mapping[p_sid].version_get_or_generate(),
                         ),
                         [],
                     )
@@ -352,13 +352,13 @@ class Scheduler:
 
 
 def compute_interval_params(
-    snapshots: t.Collection[Snapshot],
+    snapshots: t.Iterable[Snapshot],
     *,
     start: TimeLike,
     end: TimeLike,
     deployability_index: t.Optional[DeployabilityIndex] = None,
     execution_time: t.Optional[TimeLike] = None,
-    restatements: t.Optional[t.Dict[str, SnapshotInterval]] = None,
+    restatements: t.Optional[t.Dict[SnapshotId, SnapshotInterval]] = None,
     ignore_cron: bool = False,
 ) -> SnapshotToBatches:
     """Find the optimal date interval paramaters based on what needs processing and maximal batch size.

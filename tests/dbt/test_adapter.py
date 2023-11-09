@@ -71,6 +71,7 @@ def test_normalization(
 
     adapter_mock = mocker.MagicMock()
     adapter_mock.dialect = "snowflake"
+    adapter_mock.default_catalog = None
 
     context.target = SnowflakeConfig(
         account="test",
@@ -108,7 +109,7 @@ def test_normalization(
     )
     adapter_mock.drop_table.assert_has_calls([call(relation_bla_bob)])
 
-    select_star_query: exp.Select = exp.maybe_parse("SELECT * FROM t", dialect="snowflake")
+    select_star_query: exp.Select = exp.maybe_parse("SELECT * FROM t AS t", dialect="snowflake")
 
     # The following call to run_query won't return dataframes and so we're expected to
     # raise in adapter.execute right before returning from the method
@@ -165,7 +166,7 @@ def test_adapter_map_snapshot_tables(
     renderer = runtime_renderer(
         context,
         engine_adapter=engine_adapter,
-        snapshots={"test_db.test_model": snapshot_mock},
+        snapshots=[snapshot_mock],
         test_model=BaseRelation.create(schema="test_db", identifier="test_model"),
         foo_bar=BaseRelation.create(schema="foo", identifier="bar"),
     )

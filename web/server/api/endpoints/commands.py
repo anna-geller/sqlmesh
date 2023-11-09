@@ -118,7 +118,7 @@ async def render(
     context: Context = Depends(get_loaded_context),
 ) -> models.Query:
     """Renders a model's query, optionally expanding referenced models"""
-    snapshot = context.snapshots.get(options.model)
+    snapshot = context._model_fqn_to_snapshot.get(options.model)
 
     if not snapshot:
         raise ApiException(

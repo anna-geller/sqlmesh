@@ -79,7 +79,7 @@ def test_dag(sushi_context):
 
 
 def test_render(sushi_context, assert_exp_eq):
-    snapshot = sushi_context.snapshots["sushi.waiter_revenue_by_day"]
+    snapshot = sushi_context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
 
     assert_exp_eq(
         sushi_context.render(
@@ -327,21 +327,19 @@ model_defaults:
 
 def test_physical_schema_override() -> None:
     def get_schemas(context: Context):
-        return {
-            snapshot.physical_schema for snapshot in context.snapshots.values() if snapshot.is_model
-        }
+        return {snapshot.physical_schema for snapshot in context.snapshots if snapshot.is_model}
 
     def get_view_schemas(context: Context):
         return {
             snapshot.qualified_view_name.schema_name
-            for snapshot in context.snapshots.values()
+            for snapshot in context.snapshots
             if snapshot.is_model
         }
 
     def get_sushi_fingerprints(context: Context):
         return {
             snapshot.fingerprint.to_identifier()
-            for snapshot in context.snapshots.values()
+            for snapshot in context.snapshots
             if snapshot.is_model and snapshot.model.schema_name == "sushi"
         }
 
@@ -369,7 +367,7 @@ def test_janitor(sushi_context, mocker: MockerFixture) -> None:
         Environment(
             name="test_environment",
             suffix_target=EnvironmentSuffixTarget.TABLE,
-            snapshots=[x.table_info for x in sushi_context.snapshots.values()],
+            snapshots=[x.table_info for x in sushi_context.snapshots],
             start_at="2022-01-01",
             end_at="2022-01-01",
             plan_id="test_plan_id",
@@ -378,7 +376,7 @@ def test_janitor(sushi_context, mocker: MockerFixture) -> None:
         Environment(
             name="test_environment",
             suffix_target=EnvironmentSuffixTarget.SCHEMA,
-            snapshots=[x.table_info for x in sushi_context.snapshots.values()],
+            snapshots=[x.table_info for x in sushi_context.snapshots],
             start_at="2022-01-01",
             end_at="2022-01-01",
             plan_id="test_plan_id",
@@ -522,14 +520,14 @@ def test_unrestorable_snapshot(sushi_context: Context) -> None:
 
     sushi_context.upsert_model(model_v1)
     sushi_context.plan(auto_apply=True, no_prompts=True)
-    model_v1_old_snapshot = sushi_context.snapshots["sushi.test_unrestorable"]
+    model_v1_old_snapshot = sushi_context._model_fqn_to_snapshot["sushi.test_unrestorable"]
 
     sushi_context.upsert_model(model_v2)
     sushi_context.plan(auto_apply=True, no_prompts=True, forward_only=True)
 
     sushi_context.upsert_model(model_v1)
     sushi_context.plan(auto_apply=True, no_prompts=True, forward_only=True)
-    model_v1_new_snapshot = sushi_context.snapshots["sushi.test_unrestorable"]
+    model_v1_new_snapshot = sushi_context._model_fqn_to_snapshot["sushi.test_unrestorable"]
 
     assert (
         model_v1_new_snapshot.node.stamp

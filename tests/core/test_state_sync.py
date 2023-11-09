@@ -1314,11 +1314,11 @@ def test_nodes_exist(state_sync: EngineAdapterStateSync, make_snapshot: t.Callab
 
     snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
 
-    assert not state_sync.nodes_exist([snapshot.name])
+    assert not state_sync.get_snapshots_by_name([snapshot.name])
 
     state_sync.push_snapshots([snapshot])
 
-    assert state_sync.nodes_exist([snapshot.name]) == {snapshot.name}
+    assert state_sync.get_snapshots_by_name([snapshot.name]) == {snapshot.name}
 
 
 def test_invalidate_environment(state_sync: EngineAdapterStateSync, make_snapshot: t.Callable):

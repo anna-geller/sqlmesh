@@ -31,6 +31,7 @@ from sqlmesh.core.plan import Plan, SnapshotIntervals
 from sqlmesh.core.snapshot import (
     Snapshot,
     SnapshotChangeCategory,
+    SnapshotId,
     SnapshotInfoLike,
     SnapshotTableInfo,
 )
@@ -60,32 +61,39 @@ def plan_choice(plan: Plan, choice: SnapshotChangeCategory) -> None:
 @freeze_time("2023-01-08 15:00:00")
 @pytest.mark.integration
 @pytest.mark.core_integration
-def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
-    context, plan = init_and_plan_context("examples/sushi", mocker)
-    context.apply(plan)
-
-    model_name = "sushi.waiter_revenue_by_day"
-    model = context.models[model_name]
+@pytest.mark.parametrize(
+    "context_fixture",
+    ["sushi_context", "sushi_default_catalog"],
+    # ["sushi_default_catalog"],
+)
+def test_forward_only_plan_with_effective_date(context_fixture: Context, request):
+    context = request.getfixturevalue(context_fixture)
+    model_name = f"{context.default_catalog + '.' if context.default_catalog else ''}sushi.waiter_revenue_by_day"
+    model = context._models[model_name]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)), start="2023-01-01")
+    snapshot = context._model_fqn_to_snapshot[model.fqn]
+    top_waiters_snapshot = context._model_fqn_to_snapshot[
+        f"{context.default_catalog + '.' if context.default_catalog else ''}sushi.top_waiters"
+    ]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True, forward_only=True)
     assert len(plan.new_snapshots) == 2
     assert (
-        plan.context_diff.snapshots[model_name].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert plan.start == to_date("2023-01-07")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[(to_timestamp("2023-01-07"), to_timestamp("2023-01-08"))],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[(to_timestamp("2023-01-07"), to_timestamp("2023-01-08"))],
         ),
     ]
@@ -94,7 +102,7 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
     # Default start should be set to effective_from
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-05"), to_timestamp("2023-01-06")),
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
@@ -102,7 +110,7 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-05"), to_timestamp("2023-01-06")),
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
@@ -115,14 +123,14 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
     # Start override should take precedence
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
@@ -135,14 +143,14 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
     assert plan.start == "2023-01-06"
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
@@ -162,7 +170,7 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
     assert prod_plan.start == to_timestamp("2023-01-04")
     assert prod_plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-04"), to_timestamp("2023-01-05")),
                 (to_timestamp("2023-01-05"), to_timestamp("2023-01-06")),
@@ -171,7 +179,7 @@ def test_forward_only_plan_with_effective_date(mocker: MockerFixture):
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-04"), to_timestamp("2023-01-05")),
                 (to_timestamp("2023-01-05"), to_timestamp("2023-01-06")),
@@ -204,15 +212,17 @@ def test_forward_only_model_regular_plan(mocker: MockerFixture):
     model = model.copy(update={"kind": forward_only_kind})
 
     context.upsert_model(model)
+    snapshot = context._model_fqn_to_snapshot[model.fqn]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
     assert (
-        plan.context_diff.snapshots[model_name].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert plan.start == to_datetime("2023-01-01")
@@ -230,14 +240,14 @@ def test_forward_only_model_regular_plan(mocker: MockerFixture):
     plan.start = "2023-01-06"
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-06"), to_timestamp("2023-01-07")),
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
@@ -249,13 +259,13 @@ def test_forward_only_model_regular_plan(mocker: MockerFixture):
     plan.start = "2023-01-07"
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-07"), to_timestamp("2023-01-08")),
             ],
@@ -293,21 +303,23 @@ def test_plan_set_choice_is_reflected_in_missing_intervals(mocker: MockerFixture
 
     model = context.models[model_name]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
+    snapshot = context._model_fqn_to_snapshot[model.fqn]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
     assert (
-        plan.context_diff.snapshots[model_name].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.INDIRECT_NON_BREAKING
     )
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -321,17 +333,20 @@ def test_plan_set_choice_is_reflected_in_missing_intervals(mocker: MockerFixture
     ]
 
     # Change the category to BREAKING
-    plan.set_choice(plan.context_diff.snapshots[model_name], SnapshotChangeCategory.BREAKING)
-    assert (
-        plan.context_diff.snapshots[model_name].change_category == SnapshotChangeCategory.BREAKING
+    plan.set_choice(
+        plan.context_diff.snapshots[snapshot.snapshot_id], SnapshotChangeCategory.BREAKING
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
+        == SnapshotChangeCategory.BREAKING
+    )
+    assert (
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.INDIRECT_BREAKING
     )
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -343,7 +358,7 @@ def test_plan_set_choice_is_reflected_in_missing_intervals(mocker: MockerFixture
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -357,18 +372,20 @@ def test_plan_set_choice_is_reflected_in_missing_intervals(mocker: MockerFixture
     ]
 
     # Change the category back to NON_BREAKING
-    plan.set_choice(plan.context_diff.snapshots[model_name], SnapshotChangeCategory.NON_BREAKING)
+    plan.set_choice(
+        plan.context_diff.snapshots[snapshot.snapshot_id], SnapshotChangeCategory.NON_BREAKING
+    )
     assert (
-        plan.context_diff.snapshots[model_name].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.INDIRECT_NON_BREAKING
     )
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name=model_name,
+            snapshot_id=snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -424,25 +441,27 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
 
     model = context.models["sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
+    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True, forward_only=True)
     assert len(plan.new_snapshots) == 2
     assert (
-        plan.context_diff.snapshots["sushi.waiter_revenue_by_day"].change_category
+        plan.context_diff.snapshots[waiter_revenue_by_day_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert plan.start == to_date("2023-01-07")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=waiter_revenue_by_day_snapshot.snapshot_id,
             intervals=[(to_timestamp("2023-01-07"), to_timestamp("2023-01-08"))],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[(to_timestamp("2023-01-07"), to_timestamp("2023-01-08"))],
         ),
     ]
@@ -455,8 +474,8 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
     )
     assert dev_df["ds"].tolist() == ["2023-01-07"]
 
-    # FIXME: Due to freezgun freezing the time, all inteval records have the same creation timestamp.
-    # As a result removal records are always being applied after any addition records. Running the plan repeatadly
+    # FIXME: Due to freezgun freezing the time, all interval records have the same creation timestamp.
+    # As a result removal records are always being applied after any addition records. Running the plan repeatedly
     # to make sure there are no missing intervals.
     context._run_janitor()
     context.plan("dev", no_prompts=True, skip_tests=True, auto_apply=True)
@@ -465,17 +484,18 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
     model = context.models["sushi.top_waiters"]
     # Select 'one' column from the updated upstream model.
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model), literal=False))
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 1
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -504,7 +524,7 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -542,10 +562,11 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     updated_model_kind = model.kind.copy(update={"forward_only": True})
     model = model.copy(update={"stamp": "force new version", "kind": updated_model_kind})
     context.upsert_model(model)
+    snapshot = context._model_fqn_to_snapshot[model.fqn]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert (
-        plan.context_diff.snapshots["sushi.orders"].change_category
+        plan.context_diff.snapshots[snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert not plan.requires_backfill
@@ -554,17 +575,18 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     # Make a non-breaking change to a model.
     model = context.models["sushi.top_waiters"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 1
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -583,21 +605,23 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     # Make a non-breaking change upstream from the previously modified model.
     model = context.models["sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
+    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
     assert (
-        plan.context_diff.snapshots["sushi.waiter_revenue_by_day"].change_category
+        plan.context_diff.snapshots[waiter_revenue_by_day_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiters_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.INDIRECT_NON_BREAKING
     )
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=waiter_revenue_by_day_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -619,7 +643,7 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=waiter_revenue_by_day_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -631,7 +655,7 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
             ],
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.top_waiters",
+            snapshot_id=top_waiters_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -662,27 +686,30 @@ def test_forward_only_precedence_over_indirect_non_breaking(mocker: MockerFixtur
         update={"stamp": "force new version", "kind": updated_model_kind}
     )
     context.upsert_model(forward_only_model)
+    forward_only_snapshot = context._model_fqn_to_snapshot[forward_only_model.fqn]
 
     non_breaking_model = context.models["sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, non_breaking_model)))
+    non_breaking_snapshot = context._model_fqn_to_snapshot[non_breaking_model.fqn]
+    top_waiter_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert (
-        plan.context_diff.snapshots["sushi.orders"].change_category
+        plan.context_diff.snapshots[forward_only_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert (
-        plan.context_diff.snapshots["sushi.waiter_revenue_by_day"].change_category
+        plan.context_diff.snapshots[non_breaking_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.NON_BREAKING
     )
     assert (
-        plan.context_diff.snapshots["sushi.top_waiters"].change_category
+        plan.context_diff.snapshots[top_waiter_snapshot.snapshot_id].change_category
         == SnapshotChangeCategory.FORWARD_ONLY
     )
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=non_breaking_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -703,7 +730,7 @@ def test_forward_only_precedence_over_indirect_non_breaking(mocker: MockerFixtur
     assert plan.start == to_timestamp("2023-01-01")
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=non_breaking_snapshot.snapshot_id,
             intervals=[
                 (to_timestamp("2023-01-01"), to_timestamp("2023-01-02")),
                 (to_timestamp("2023-01-02"), to_timestamp("2023-01-03")),
@@ -773,8 +800,7 @@ def test_select_models_for_backfill(mocker: MockerFixture):
 @pytest.mark.core_integration
 @pytest.mark.parametrize(
     "context_fixture",
-    # ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_default_catalog"],
-    ["sushi_default_catalog"],
+    ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_default_catalog"],
 )
 def test_model_add(context_fixture: Context, request):
     initial_add(request.getfixturevalue(context_fixture), "dev")
@@ -786,17 +812,16 @@ def test_model_removed(sushi_context: Context):
     environment = "dev"
     initial_add(sushi_context, environment)
 
-    top_waiters_snapshot_id = sushi_context.snapshots["sushi.top_waiters"].snapshot_id
+    top_waiters_snapshot_id = sushi_context._model_fqn_to_snapshot["sushi.top_waiters"].snapshot_id
 
     sushi_context._models.pop("sushi.top_waiters")
-    removed = ["sushi.top_waiters"]
 
     def _validate_plan(context, plan):
-        validate_plan_changes(plan, removed=removed)
+        validate_plan_changes(plan, removed=[top_waiters_snapshot_id])
         assert not plan.missing_intervals
 
     def _validate_apply(context):
-        assert not sushi_context.snapshots.get("sushi.top_waiters")
+        assert not sushi_context._model_fqn_to_snapshot.get("sushi.top_waiters")
         assert sushi_context.state_reader.get_snapshots([top_waiters_snapshot_id])
         env = sushi_context.state_reader.get_environment(environment)
         assert env
@@ -840,7 +865,7 @@ def test_forward_only(sushi_context: Context):
 def test_logical_change(sushi_context: Context):
     environment = "dev"
     initial_add(sushi_context, environment)
-    previous_sushi_items_version = sushi_context.snapshots["sushi.items"].version
+    previous_sushi_items_version = sushi_context._model_fqn_to_snapshot["sushi.items"].version
 
     change_data_type(
         sushi_context,
@@ -858,7 +883,9 @@ def test_logical_change(sushi_context: Context):
     )
     apply_to_environment(sushi_context, environment, SnapshotChangeCategory.NON_BREAKING)
 
-    assert sushi_context.snapshots["sushi.items"].version == previous_sushi_items_version
+    assert (
+        sushi_context._model_fqn_to_snapshot["sushi.items"].version == previous_sushi_items_version
+    )
 
 
 def validate_query_change(
@@ -876,19 +903,23 @@ def validate_query_change(
         DataType.Type.FLOAT,
     )
 
-    directly_modified = ["sushi.items"]
+    directly_modified = [context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
     indirectly_modified = [
-        "sushi.order_items",
-        "sushi.waiter_revenue_by_day",
-        "sushi.customer_revenue_by_day",
-        "sushi.customer_revenue_lifetime",
-        "sushi.top_waiters",
-        "assert_item_price_above_zero",
+        context._model_fqn_to_snapshot[model_name].snapshot_id
+        for model_name in [
+            "sushi.order_items",
+            "sushi.waiter_revenue_by_day",
+            "sushi.customer_revenue_by_day",
+            "sushi.customer_revenue_lifetime",
+            "sushi.top_waiters",
+            "assert_item_price_above_zero",
+        ]
     ]
     not_modified = [
-        key
-        for key in context.snapshots
-        if key not in directly_modified and key not in indirectly_modified
+        snapshot.snapshot_id
+        for snapshot in context.snapshots
+        if snapshot.snapshot_id not in directly_modified
+        and snapshot.snapshot_id not in indirectly_modified
     ]
 
     if change_category == SnapshotChangeCategory.BREAKING and not logical:
@@ -907,8 +938,8 @@ def validate_query_change(
 
     def _validate_apply(context):
         current_versions = snapshots_to_versions(context.snapshots)
-        validate_versions_same(models_same, versions, current_versions)
-        validate_versions_different(models_different, versions, current_versions)
+        validate_versions_same([x.name for x in models_same], versions, current_versions)
+        validate_versions_different([x.name for x in models_different], versions, current_versions)
 
     apply_to_environment(
         context,
@@ -940,7 +971,7 @@ def validate_query_change(
 )
 def test_model_kind_change(from_: ModelKindName, to: ModelKindName, sushi_context: Context):
     environment = f"test_model_kind_change__{from_.value.lower()}__{to.value.lower()}"
-    incremental_snapshot = sushi_context.snapshots["sushi.items"].copy()
+    incremental_snapshot = sushi_context._model_fqn_to_snapshot["sushi.items"].copy()
 
     if from_ != ModelKindName.INCREMENTAL_BY_TIME_RANGE:
         change_model_kind(sushi_context, from_)
@@ -972,14 +1003,17 @@ def validate_model_kind_change(
     *,
     logical: bool,
 ):
-    directly_modified = ["sushi.items"]
+    directly_modified = [context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
     indirectly_modified = [
-        "sushi.order_items",
-        "sushi.waiter_revenue_by_day",
-        "sushi.customer_revenue_by_day",
-        "sushi.customer_revenue_lifetime",
-        "sushi.top_waiters",
-        "assert_item_price_above_zero",
+        context._model_fqn_to_snapshot[model_name].snapshot_id
+        for model_name in [
+            "sushi.order_items",
+            "sushi.waiter_revenue_by_day",
+            "sushi.customer_revenue_by_day",
+            "sushi.customer_revenue_lifetime",
+            "sushi.top_waiters",
+            "assert_item_price_above_zero",
+        ]
     ]
     if kind_name == ModelKindName.INCREMENTAL_BY_TIME_RANGE:
         kind: ModelKind = IncrementalByTimeRangeKind(
@@ -1011,7 +1045,7 @@ def validate_model_kind_change(
 @pytest.mark.integration
 @pytest.mark.core_integration
 def test_environment_isolation(sushi_context: Context):
-    prod_snapshots = sushi_context.snapshots.values()
+    prod_snapshots = sushi_context.snapshots
 
     change_data_type(
         sushi_context,
@@ -1019,14 +1053,17 @@ def test_environment_isolation(sushi_context: Context):
         DataType.Type.DOUBLE,
         DataType.Type.FLOAT,
     )
-    directly_modified = ["sushi.items"]
+    directly_modified = [sushi_context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
     indirectly_modified = [
-        "sushi.order_items",
-        "sushi.waiter_revenue_by_day",
-        "sushi.customer_revenue_by_day",
-        "sushi.customer_revenue_lifetime",
-        "sushi.top_waiters",
-        "assert_item_price_above_zero",
+        sushi_context._model_fqn_to_snapshot[model_name].snapshot_id
+        for model_name in [
+            "sushi.order_items",
+            "sushi.waiter_revenue_by_day",
+            "sushi.customer_revenue_by_day",
+            "sushi.customer_revenue_lifetime",
+            "sushi.top_waiters",
+            "assert_item_price_above_zero",
+        ]
     ]
 
     apply_to_environment(sushi_context, "dev", SnapshotChangeCategory.BREAKING)
@@ -1075,16 +1112,28 @@ def test_environment_promotion(sushi_context: Context):
 
     # Promote to prod
     def _validate_plan(context, plan):
+        sushi_items_snapshot = context._model_fqn_to_snapshot["sushi.items"]
+        sushi_top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+        sushi_customer_revenue_by_day_snapshot = context._model_fqn_to_snapshot[
+            "sushi.customer_revenue_by_day"
+        ]
+
         assert (
-            plan.context_diff.modified_snapshots["sushi.items"][0].change_category
+            plan.context_diff.modified_snapshots[sushi_items_snapshot.snapshot_id][
+                0
+            ].change_category
             == SnapshotChangeCategory.NON_BREAKING
         )
         assert (
-            plan.context_diff.modified_snapshots["sushi.top_waiters"][0].change_category
+            plan.context_diff.modified_snapshots[sushi_top_waiters_snapshot.snapshot_id][
+                0
+            ].change_category
             == SnapshotChangeCategory.BREAKING
         )
         assert (
-            plan.context_diff.modified_snapshots["sushi.customer_revenue_by_day"][0].change_category
+            plan.context_diff.modified_snapshots[
+                sushi_customer_revenue_by_day_snapshot.snapshot_id
+            ][0].change_category
             == SnapshotChangeCategory.FORWARD_ONLY
         )
 
@@ -1114,9 +1163,15 @@ def test_no_override(sushi_context: Context) -> None:
     )
     plan = sushi_context.plan("prod")
 
-    items = plan.context_diff.snapshots["sushi.items"]
-    order_items = plan.context_diff.snapshots["sushi.order_items"]
-    waiter_revenue = plan.context_diff.snapshots["sushi.waiter_revenue_by_day"]
+    sushi_items_snapshot = sushi_context._model_fqn_to_snapshot["sushi.items"]
+    sushi_order_items_snapshot = sushi_context._model_fqn_to_snapshot["sushi.order_items"]
+    sushi_water_revenue_by_day_snapshot = sushi_context._model_fqn_to_snapshot[
+        "sushi.waiter_revenue_by_day"
+    ]
+
+    items = plan.context_diff.snapshots[sushi_items_snapshot.snapshot_id]
+    order_items = plan.context_diff.snapshots[sushi_order_items_snapshot.snapshot_id]
+    waiter_revenue = plan.context_diff.snapshots[sushi_water_revenue_by_day_snapshot.snapshot_id]
     plan.set_choice(items, SnapshotChangeCategory.BREAKING)
     plan.set_choice(order_items, SnapshotChangeCategory.NON_BREAKING)
     assert items.is_new_version
@@ -1212,29 +1267,36 @@ def setup_rebase(
     )
     plan = context.plan("dev", start=start(context))
 
-    assert plan.categorized == [context.snapshots["sushi.items"]]
-    assert plan.indirectly_modified == {
-        "sushi.items": {
-            "sushi.order_items",
-            "sushi.waiter_revenue_by_day",
-            "sushi.top_waiters",
-            "sushi.customer_revenue_by_day",
-            "sushi.customer_revenue_lifetime",
-            "assert_item_price_above_zero",
-        }
-    }
+    sushi_items_snapshot = context._model_fqn_to_snapshot["sushi.items"]
+    assert plan.categorized == [sushi_items_snapshot]
+    assert list(plan.indirectly_modified) == [sushi_items_snapshot.snapshot_id]
+    assert sorted(
+        downstream.name
+        for downstream_snapshot_ids in plan.indirectly_modified.values()
+        for downstream in downstream_snapshot_ids
+    ) == [
+        "assert_item_price_above_zero",
+        "sushi.customer_revenue_by_day",
+        "sushi.customer_revenue_lifetime",
+        "sushi.order_items",
+        "sushi.top_waiters",
+        "sushi.waiter_revenue_by_day",
+    ]
     context.apply(plan)
     validate_apply_basics(context, "dev", plan.snapshots)
 
     if version_kind == "new":
         for versions in [remote_versions, local_versions]:
             assert (
-                context.snapshots["sushi.waiter_revenue_by_day"].version
+                context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"].version
                 != versions["sushi.waiter_revenue_by_day"]
             )
-            assert context.snapshots["sushi.top_waiters"].version != versions["sushi.top_waiters"]
             assert (
-                context.snapshots["sushi.customer_revenue_by_day"].version
+                context._model_fqn_to_snapshot["sushi.top_waiters"].version
+                != versions["sushi.top_waiters"]
+            )
+            assert (
+                context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"].version
                 != versions["sushi.customer_revenue_by_day"]
             )
     else:
@@ -1243,12 +1305,15 @@ def setup_rebase(
         else:
             versions = local_versions
         assert (
-            context.snapshots["sushi.waiter_revenue_by_day"].version
+            context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"].version
             == versions["sushi.waiter_revenue_by_day"]
         )
-        assert context.snapshots["sushi.top_waiters"].version == versions["sushi.top_waiters"]
         assert (
-            context.snapshots["sushi.customer_revenue_by_day"].version
+            context._model_fqn_to_snapshot["sushi.top_waiters"].version
+            == versions["sushi.top_waiters"]
+        )
+        assert (
+            context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"].version
             == versions["sushi.customer_revenue_by_day"]
         )
 
@@ -1284,7 +1349,7 @@ def test_revert(
     expected: SnapshotChangeCategory,
 ):
     environment = "prod"
-    original_snapshot_id = sushi_context.snapshots["sushi.items"]
+    original_snapshot_id = sushi_context._model_fqn_to_snapshot["sushi.items"]
 
     types = (DataType.Type.DOUBLE, DataType.Type.FLOAT, DataType.Type.DECIMAL)
     assert len(change_categories) < len(types)
@@ -1292,7 +1357,7 @@ def test_revert(
     for i, category in enumerate(change_categories):
         change_data_type(sushi_context, "sushi.items", *types[i : i + 2])
         apply_to_environment(sushi_context, environment, category)
-        assert sushi_context.snapshots["sushi.items"] != original_snapshot_id
+        assert sushi_context._model_fqn_to_snapshot["sushi.items"] != original_snapshot_id
 
     change_data_type(sushi_context, "sushi.items", types[len(change_categories)], types[0])
 
@@ -1307,7 +1372,7 @@ def test_revert(
         change_categories[-1],
         plan_validators=[_validate_plan],
     )
-    assert sushi_context.snapshots["sushi.items"] == original_snapshot_id
+    assert sushi_context._model_fqn_to_snapshot["sushi.items"] == original_snapshot_id
 
 
 @pytest.mark.integration
@@ -1348,19 +1413,26 @@ def test_auto_categorization(sushi_context: Context):
         config.auto_categorize_changes.sql = AutoCategorizationMode.FULL
     initial_add(sushi_context, environment)
 
-    version = sushi_context.snapshots["sushi.waiter_as_customer_by_day"].version
-    fingerprint = sushi_context.snapshots["sushi.waiter_as_customer_by_day"].fingerprint
+    version = sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].version
+    fingerprint = sushi_context._model_fqn_to_snapshot[
+        "sushi.waiter_as_customer_by_day"
+    ].fingerprint
 
     model = t.cast(SqlModel, sushi_context.models["sushi.customers"])
     sushi_context.upsert_model("sushi.customers", query=model.query.select("'foo' AS foo"))  # type: ignore
     apply_to_environment(sushi_context, environment)
 
     assert (
-        sushi_context.snapshots["sushi.waiter_as_customer_by_day"].change_category
+        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].change_category
         == SnapshotChangeCategory.INDIRECT_NON_BREAKING
     )
-    assert sushi_context.snapshots["sushi.waiter_as_customer_by_day"].fingerprint != fingerprint
-    assert sushi_context.snapshots["sushi.waiter_as_customer_by_day"].version == version
+    assert (
+        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].fingerprint
+        != fingerprint
+    )
+    assert (
+        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].version == version
+    )
 
 
 @pytest.mark.integration
@@ -1380,7 +1452,10 @@ def test_multi(mocker):
     context.upsert_model(model.copy(update={"query": model.query.select("'c' AS c")}))
     plan = context.plan()
     assert set(snapshot.name for snapshot in plan.directly_modified) == {"bronze.a", "bronze.b"}
-    assert list(plan.indirectly_modified.values())[0] == {"silver.c", "silver.d"}
+    assert sorted([x.name for x in list(plan.indirectly_modified.values())[0]]) == [
+        "silver.c",
+        "silver.d",
+    ]
     assert len(plan.missing_intervals) == 2
     context.apply(plan)
     validate_apply_basics(context, c.PROD, plan.snapshots)
@@ -1408,10 +1483,14 @@ def test_incremental_time_self_reference(
         start=start_date,
         end="5 days ago",
     )
-    assert sorted(plan.missing_intervals, key=lambda x: x.snapshot_name) == sorted(
+    revenue_lifeteime_snapshot = sushi_context._model_fqn_to_snapshot[
+        "sushi.customer_revenue_lifetime"
+    ]
+    revenue_by_day_snapshot = sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"]
+    assert sorted(plan.missing_intervals, key=lambda x: x.snapshot_id) == sorted(
         [
             SnapshotIntervals(
-                snapshot_name="sushi.customer_revenue_lifetime",
+                snapshot_id=revenue_lifeteime_snapshot.snapshot_id,
                 intervals=[
                     (to_timestamp(to_date("7 days ago")), to_timestamp(to_date("6 days ago"))),
                     (to_timestamp(to_date("6 days ago")), to_timestamp(to_date("5 days ago"))),
@@ -1423,14 +1502,14 @@ def test_incremental_time_self_reference(
                 ],
             ),
             SnapshotIntervals(
-                snapshot_name="sushi.customer_revenue_by_day",
+                snapshot_id=revenue_by_day_snapshot.snapshot_id,
                 intervals=[
                     (to_timestamp(to_date("7 days ago")), to_timestamp(to_date("6 days ago"))),
                     (to_timestamp(to_date("6 days ago")), to_timestamp(to_date("5 days ago"))),
                 ],
             ),
         ],
-        key=lambda x: x.snapshot_name,
+        key=lambda x: x.snapshot_id,
     )
     sushi_context.console = mocker.Mock(spec=Console)
     plan.apply()
@@ -1439,8 +1518,8 @@ def test_incremental_time_self_reference(
     )
     # Validate that we made 7 calls to the customer_revenue_lifetime snapshot and 1 call to the customer_revenue_by_day snapshot
     assert num_batch_calls == {
-        sushi_context.snapshots["sushi.customer_revenue_lifetime"]: 7,
-        sushi_context.snapshots["sushi.customer_revenue_by_day"]: 1,
+        sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_lifetime"]: 7,
+        sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"]: 1,
     }
     # Validate that the results are the same as before the restate
     assert results == sushi_data_validator.validate(
@@ -1521,8 +1600,11 @@ def test_ignored_snapshots(sushi_context: Context):
     plan = apply_to_environment(
         sushi_context, environment, choice=SnapshotChangeCategory.BREAKING, plan_start="2 days ago"
     )
+    revenue_lifetime_snapshot = sushi_context._model_fqn_to_snapshot[
+        "sushi.customer_revenue_lifetime"
+    ]
     # Validate that the depends_on_past model is ignored
-    assert plan.ignored_snapshot_names == {"sushi.customer_revenue_lifetime"}
+    assert plan.ignored_snapshot_ids == {revenue_lifetime_snapshot.snapshot_id}
     # Validate that the table was really ignored
     metadata = DuckDBMetadata.from_context(sushi_context)
     # Make sure prod view exists
@@ -1692,7 +1774,7 @@ def initial_add(context: Context, environment: str):
     assert not context.state_reader.get_environment(environment)
 
     plan = context.plan(environment, start=start(context), create_from="nonexistent_env")
-    validate_plan_changes(plan, added=set(context.snapshots) | set(context.standalone_audits))
+    validate_plan_changes(plan, added=set(context._snapshots()))
 
     context.apply(plan)
     validate_apply_basics(context, environment, plan.snapshots)
@@ -1753,9 +1835,9 @@ def change_data_type(
 def validate_plan_changes(
     plan: Plan,
     *,
-    added: t.Optional[t.Iterable[str]] = None,
-    modified: t.Optional[t.Iterable[str]] = None,
-    removed: t.Optional[t.Iterable[str]] = None,
+    added: t.Optional[t.Iterable[SnapshotId]] = None,
+    modified: t.Optional[t.Iterable[SnapshotId]] = None,
+    removed: t.Optional[t.Iterable[SnapshotId]] = None,
 ) -> None:
     added = added or []
     modified = modified or []
@@ -1846,8 +1928,8 @@ def select_all(table: str, adapter: EngineAdapter) -> t.Iterable:
     return adapter.fetchall(f"select * from {table}")
 
 
-def snapshots_to_versions(snapshots: t.Dict[str, Snapshot]) -> t.Dict[str, str]:
-    return {k: v.version or "" for k, v in snapshots.items()}
+def snapshots_to_versions(snapshots: t.Iterable[Snapshot]) -> t.Dict[str, str]:
+    return {snapshot.name: snapshot.version or "" for snapshot in snapshots}
 
 
 def to_snapshot_info(snapshot: SnapshotInfoLike) -> SnapshotTableInfo:

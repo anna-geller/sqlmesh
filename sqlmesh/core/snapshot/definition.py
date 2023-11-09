@@ -1380,11 +1380,11 @@ def has_paused_forward_only(
 
 
 def missing_intervals(
-    snapshots: t.Collection[Snapshot],
+    snapshots: t.Iterable[Snapshot],
     start: t.Optional[TimeLike] = None,
     end: t.Optional[TimeLike] = None,
     execution_time: t.Optional[TimeLike] = None,
-    restatements: t.Optional[t.Dict[str, Interval]] = None,
+    restatements: t.Optional[t.Dict[SnapshotId, Interval]] = None,
     deployability_index: t.Optional[DeployabilityIndex] = None,
     ignore_cron: bool = False,
 ) -> t.Dict[Snapshot, Intervals]:
@@ -1404,7 +1404,7 @@ def missing_intervals(
     for snapshot in snapshots:
         if snapshot.is_symbolic:
             continue
-        interval = restatements.get(snapshot.name)
+        interval = restatements.get(snapshot.snapshot_id)
         snapshot_start_date = start_dt
         snapshot_end_date = end_date
         if interval:
@@ -1430,7 +1430,7 @@ def missing_intervals(
 
 
 def earliest_start_date(
-    snapshots: t.Collection[Snapshot],
+    snapshots: t.Iterable[Snapshot],
     cache: t.Optional[t.Dict[str, datetime]] = None,
     relative_to: t.Optional[TimeLike] = None,
 ) -> datetime:

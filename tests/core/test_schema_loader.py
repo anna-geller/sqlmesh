@@ -6,7 +6,6 @@ import pandas as pd
 from pytest_mock.plugin import MockerFixture
 from sqlglot import exp, parse_one
 
-from sqlmesh.core.model.definition import Model
 from sqlmesh.core import constants as c
 from sqlmesh.core.config import Config, DuckDBConnectionConfig, GatewayConfig
 from sqlmesh.core.context import Context
@@ -14,7 +13,6 @@ from sqlmesh.core.dialect import parse
 from sqlmesh.core.model import SqlModel, create_external_model, load_sql_based_model
 from sqlmesh.core.schema_loader import create_schema_file
 from sqlmesh.core.snapshot import SnapshotChangeCategory
-from sqlmesh.utils import UniqueKeyDict
 from sqlmesh.utils.yaml import YAML
 
 
@@ -75,7 +73,7 @@ def test_create_external_models(tmpdir, assert_exp_eq):
         "name": exp.DataType.build("VARCHAR"),
     }
 
-    snapshot = context.snapshots["sushi.raw_fruits"]
+    snapshot = context._model_fqn_to_snapshot["sushi.raw_fruits"]
     snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
 
     fruits = context.models["sushi.fruits"]
@@ -100,15 +98,17 @@ def test_create_external_models(tmpdir, assert_exp_eq):
     assert context.models["sushi.raw_fruits"]
 
 
-def test_no_internal_model_conversion(tmp_path: Path, mocker: MockerFixture):
+def test_no_internal_model_conversion(tmp_path: Path, make_snapshot, mocker: MockerFixture):
     engine_adapter_mock = mocker.Mock()
     engine_adapter_mock.columns.return_value = {
         "b": exp.DataType.build("text"),
         "a": exp.DataType.build("bigint"),
     }
+    snapshot_a = make_snapshot(SqlModel(name="a", query=parse_one("select * FROM model_b, tbl_c")))
+    snapshot_b = make_snapshot(SqlModel(name="model_b", query=parse_one("select * FROM tbl_c")))
 
     state_reader_mock = mocker.Mock()
-    state_reader_mock.nodes_exist.return_value = {"model_b"}
+    state_reader_mock.get_snapshots_by_name.return_value = {snapshot_a, snapshot_b}
 
     model_a = SqlModel(name="a", query=parse_one("select * FROM model_b, tbl_c"))
     model_b = SqlModel(name="b", query=parse_one("select * FROM `tbl-d`", read="bigquery"))
@@ -116,7 +116,7 @@ def test_no_internal_model_conversion(tmp_path: Path, mocker: MockerFixture):
     schema_file = tmp_path / c.SCHEMA_YAML
     create_schema_file(
         schema_file,
-        {
+        {  # type: ignore
             "a": model_a,
             "b": model_b,
         },
@@ -147,7 +147,7 @@ def test_missing_table(tmp_path: Path):
     logger = logging.getLogger("sqlmesh.core.schema_loader")
     with patch.object(logger, "warning") as mock_logger:
         create_schema_file(
-            schema_file, {"a": model}, context.engine_adapter, context.state_reader, ""
+            schema_file, {"a": model}, context.engine_adapter, context.state_reader, ""  # type: ignore
         )
     assert "Unable to get schema for 'tbl_source'" in mock_logger.call_args[0][0]
 

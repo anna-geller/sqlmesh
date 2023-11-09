@@ -81,7 +81,7 @@ class AuditMixin(AuditCommonMetaMixin):
         start: t.Optional[TimeLike] = None,
         end: t.Optional[TimeLike] = None,
         execution_time: t.Optional[TimeLike] = None,
-        snapshots: t.Optional[t.Dict[str, Snapshot]] = None,
+        snapshots: t.Optional[t.Iterable[Snapshot]] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
         **kwargs: t.Any,
     ) -> exp.Subqueryable:
@@ -184,7 +184,7 @@ class ModelAudit(PydanticModel, AuditMixin, frozen=True):
         start: t.Optional[TimeLike] = None,
         end: t.Optional[TimeLike] = None,
         execution_time: t.Optional[TimeLike] = None,
-        snapshots: t.Optional[t.Dict[str, Snapshot]] = None,
+        snapshots: t.Optional[t.Iterable[Snapshot]] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
         **kwargs: t.Any,
     ) -> exp.Subqueryable:

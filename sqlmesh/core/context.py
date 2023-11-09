@@ -85,6 +85,7 @@ from sqlmesh.core.snapshot import (
     Snapshot,
     SnapshotEvaluator,
     SnapshotFingerprint,
+    SnapshotId,
     to_table_mapping,
 )
 from sqlmesh.core.state_sync import (
@@ -133,11 +134,6 @@ class BaseContext(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def _model_name_mapping(self) -> t.Dict[str, Model]:
-        """Returns a mapping of model names to models."""
-
-    @property
-    @abc.abstractmethod
     def engine_adapter(self) -> EngineAdapter:
         """Returns an engine adapter."""
 
@@ -155,7 +151,10 @@ class BaseContext(abc.ABC):
         Returns:
             The physical table name.
         """
-        return self._model_tables[self._model_name_mapping[model_name].fqn]
+        model_name = normalize_model_name(
+            model_name, self.engine_adapter.default_catalog, self.engine_adapter.dialect
+        )
+        return self._model_tables[model_name]
 
     def fetchdf(
         self, query: t.Union[exp.Expression, str], quote_identifiers: bool = False
@@ -198,17 +197,13 @@ class ExecutionContext(BaseContext):
     def __init__(
         self,
         engine_adapter: EngineAdapter,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
     ):
         self.snapshots = snapshots
         self.deployability_index = deployability_index
         self._engine_adapter = engine_adapter
-        self.__model_tables = to_table_mapping(snapshots.values(), deployability_index)
-        self.__model_name_mapping = t.cast(
-            t.Dict[str, Model],
-            {snapshot.name: snapshot.node for snapshot in snapshots.values() if snapshot.is_model},
-        )
+        self.__model_tables = to_table_mapping(snapshots, deployability_index)
 
     @property
     def engine_adapter(self) -> EngineAdapter:
@@ -219,11 +214,6 @@ class ExecutionContext(BaseContext):
     def _model_tables(self) -> t.Dict[str, str]:
         """Returns a mapping of model names to tables."""
         return self.__model_tables
-
-    @property
-    def _model_name_mapping(self) -> t.Dict[str, Model]:
-        """Returns a mapping of model names to models."""
-        return self.__model_name_mapping
 
 
 class Context(BaseContext):
@@ -386,7 +376,7 @@ class Context(BaseContext):
                 raise ConfigError(f"Environment '{environment}' was not found.")
             snapshots = self.state_sync.get_snapshots(stored_environment.snapshots).values()
         else:
-            snapshots = self.snapshots.values()
+            snapshots = self.snapshots
 
         if not snapshots:
             raise ConfigError("No models were found")
@@ -610,24 +600,25 @@ class Context(BaseContext):
         """Returns a snapshot with the given name or None if a snapshot with such name doesn't exist.
 
         Args:
-            model_or_snapshot: A model name, model, or snapshot.
+            node_or_snapshot: A model name, model, or snapshot.
             raise_if_missing: Raises an error if a snapshot is not found.
 
         Returns:
             The expected snapshot.
         """
-        if isinstance(node_or_snapshot, str):
-            normalized_name = normalize_model_name(
+        if isinstance(node_or_snapshot, Snapshot):
+            return node_or_snapshot
+        fqn = (
+            normalize_model_name(
                 node_or_snapshot, default_catalog=self.default_catalog, dialect=self.config.dialect
             )
-            snapshot = self.snapshots.get(normalized_name)
-        elif isinstance(node_or_snapshot, Snapshot):
-            snapshot = node_or_snapshot
-        else:
-            snapshot = self.snapshots.get(node_or_snapshot.name)
+            if isinstance(node_or_snapshot, str)
+            else node_or_snapshot.fqn
+        )
+        snapshot = self._model_fqn_to_snapshot.get(fqn)
 
         if raise_if_missing and not snapshot:
-            raise SQLMeshError(f"Cannot find snapshot for '{node_or_snapshot}'")
+            raise SQLMeshError(f"Cannot find snapshot for '{fqn}'")
 
         return snapshot
 
@@ -665,13 +656,17 @@ class Context(BaseContext):
         return MappingProxyType(self._standalone_audits)
 
     @property
-    def snapshots(self) -> t.Dict[str, Snapshot]:
+    def snapshots(self) -> t.Iterable[Snapshot]:
         """Generates and returns snapshots based on models registered in this context.
 
-        If one of the snapshots has been previosly stored in the persisted state, the stored
+        If one of the snapshots has been previously stored in the persisted state, the stored
         instance will be returned.
         """
-        return self._snapshots()
+        return self._snapshots().values()
+
+    @property
+    def _model_fqn_to_snapshot(self) -> t.Dict[str, Snapshot]:
+        return {s.fqn: s for s in self.snapshots}
 
     def render(
         self,
@@ -882,7 +877,14 @@ class Context(BaseContext):
             )
 
         if restate_models is not None:
-            restate_models = model_selector.expand_model_selections(restate_models)
+            restate_models = model_selector.expand_model_selections(
+                [
+                    normalize_model_name(
+                        x, default_catalog=self.default_catalog, dialect=self.config.dialect
+                    )
+                    for x in restate_models
+                ]
+            )
 
         if backfill_models:
             backfill_models = model_selector.expand_model_selections(backfill_models)
@@ -1173,7 +1175,7 @@ class Context(BaseContext):
         snapshots = (
             [self.get_snapshot(model, raise_if_missing=True) for model in models]
             if models
-            else self.snapshots.values()
+            else self.snapshots
         )
 
         num_audits = sum(len(snapshot.audits_with_args) for snapshot in snapshots)
@@ -1319,46 +1321,37 @@ class Context(BaseContext):
         If a snapshot has not been versioned yet, its view name will be returned.
         """
         return {
-            name: snapshot.table_name()
+            snapshot.fqn: snapshot.table_name()
             if snapshot.version
             else snapshot.qualified_view_name.for_environment(
                 EnvironmentNamingInfo(
                     name=c.PROD, suffix_target=self.config.environment_suffix_target
                 )
             )
-            for name, snapshot in self.snapshots.items()
+            for snapshot in self.snapshots
         }
-
-    @property
-    def _model_name_mapping(self) -> t.Dict[str, Model]:
-        """Mapping of model name to model."""
-        return t.cast(
-            t.Dict[str, Model],
-            {
-                snapshot.name: snapshot.node
-                for snapshot in self.snapshots.values()
-                if snapshot.is_model
-            },
-        )
 
     def _snapshots(
         self, models_override: t.Optional[UniqueKeyDict[str, Model]] = None
-    ) -> t.Dict[str, Snapshot]:
+    ) -> t.Dict[SnapshotId, Snapshot]:
         prod = self.state_reader.get_environment(c.PROD)
         remote_snapshots = (
             {
-                snapshot.name: snapshot
+                snapshot.snapshot_id: snapshot
                 for snapshot in self.state_reader.get_snapshots(prod.snapshots).values()
             }
             if prod
             else {}
         )
+        remote_snapshot_model_fqn_to_snapshot = {
+            snapshot.fqn: snapshot for s_id, snapshot in remote_snapshots.items()
+        }
         models = models_override or self._models
         local_nodes: t.Dict[str, t.Union[Model, StandaloneAudit]] = {
             **models,
             **self._standalone_audits,
         }
-        # local_nodes_and_fqn_models = {**local_nodes, **model_registry.fqn_to_model}
+
         nodes = local_nodes.copy()
         audits = self._audits.copy()
         projects = {config.project for config in self.configs.values()}
@@ -1372,14 +1365,16 @@ class Context(BaseContext):
                         if name not in audits:
                             audits[name] = audit
 
-        def _nodes_to_snapshots(nodes: t.Dict[str, Node]) -> t.Dict[str, Snapshot]:
-            snapshots: t.Dict[str, Snapshot] = {}
+        def _nodes_to_snapshots(nodes: t.Dict[str, Node]) -> t.Dict[SnapshotId, Snapshot]:
+            snapshots: t.Dict[SnapshotId, Snapshot] = {}
             fingerprint_cache: t.Dict[str, SnapshotFingerprint] = {}
 
             for node in nodes.values():
-                if node.fqn not in local_nodes and node.name in remote_snapshots:
-                    snapshot = remote_snapshots[node.name]
-                    ttl = snapshot.ttl
+                if (
+                    node.fqn not in local_nodes
+                    and node.fqn in remote_snapshot_model_fqn_to_snapshot
+                ):
+                    ttl = remote_snapshot_model_fqn_to_snapshot[node.fqn].ttl
                 else:
                     config = self.config_for_node(node)
                     ttl = config.snapshot_ttl
@@ -1391,42 +1386,41 @@ class Context(BaseContext):
                     cache=fingerprint_cache,
                     ttl=ttl,
                 )
-                snapshots[node.name] = snapshot
+                snapshots[snapshot.snapshot_id] = snapshot
             return snapshots
 
         snapshots = _nodes_to_snapshots(nodes)
-        stored_snapshots = self.state_reader.get_snapshots(snapshots.values())
+        stored_snapshots = self.state_reader.get_snapshots(snapshots)
 
-        unrestorable_snapshot_names = {
-            s.fqn for s in stored_snapshots.values() if s.fqn in local_nodes and s.unrestorable
+        unrestorable_snapshot_ids = {
+            s_id: snapshot
+            for s_id, snapshot in stored_snapshots.items()
+            if snapshot.fqn in local_nodes and snapshot.unrestorable
         }
-        if unrestorable_snapshot_names:
-            for name in unrestorable_snapshot_names:
-                snapshot_id = snapshots[name].snapshot_id
-                logger.info(
-                    "Found a unrestorable snapshot %s. Restamping the model...", snapshot_id
-                )
-                node = local_nodes[name]
-                nodes[name] = node.copy(update={"stamp": f"revert to {snapshot_id.identifier}"})
+        if unrestorable_snapshot_ids:
+            for s_id, snapshot in unrestorable_snapshot_ids.items():
+                logger.info("Found a unrestorable snapshot %s. Restamping the model...", s_id)
+                node = local_nodes[snapshot.fqn]
+                nodes[snapshot.fqn] = node.copy(update={"stamp": f"revert to {s_id.identifier}"})
             snapshots = _nodes_to_snapshots(nodes)
             stored_snapshots = self.state_reader.get_snapshots(snapshots.values())
 
-        for snapshot in stored_snapshots.values():
+        for s_id, snapshot in stored_snapshots.items():
             # Keep the original model instance to preserve the query cache.
-            snapshot.node = snapshots[snapshot.name].node
+            snapshot.node = snapshots[s_id].node
 
-        return {name: stored_snapshots.get(s.snapshot_id, s) for name, s in snapshots.items()}
+        return {s_id: stored_snapshots.get(s_id, s) for s_id, s in snapshots.items()}
 
     def _context_diff(
         self,
         environment: str,
-        snapshots: t.Optional[t.Dict[str, Snapshot]] = None,
+        snapshots: t.Optional[t.Dict[SnapshotId, Snapshot]] = None,
         create_from: t.Optional[str] = None,
     ) -> ContextDiff:
         environment = Environment.normalize_name(environment)
         return ContextDiff.create(
             environment,
-            snapshots=snapshots or self.snapshots,
+            snapshots=snapshots or self._snapshots(),
             create_from=create_from or c.PROD,
             state_reader=self.state_reader,
         )

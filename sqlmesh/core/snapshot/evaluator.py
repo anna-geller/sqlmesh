@@ -42,7 +42,6 @@ from sqlmesh.core.snapshot import (
     QualifiedViewName,
     Snapshot,
     SnapshotChangeCategory,
-    SnapshotId,
     SnapshotInfoLike,
     SnapshotTableCleanupTask,
 )
@@ -90,7 +89,7 @@ class SnapshotEvaluator:
         start: TimeLike,
         end: TimeLike,
         execution_time: TimeLike,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         limit: t.Optional[int] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
         **kwargs: t.Any,
@@ -272,7 +271,7 @@ class SnapshotEvaluator:
     def create(
         self,
         target_snapshots: t.Iterable[Snapshot],
-        snapshots: t.Dict[SnapshotId, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex] = None,
         on_complete: t.Optional[t.Callable[[SnapshotInfoLike], None]] = None,
     ) -> None:
@@ -295,7 +294,7 @@ class SnapshotEvaluator:
             )
 
     def migrate(
-        self, target_snapshots: t.Iterable[Snapshot], snapshots: t.Dict[SnapshotId, Snapshot]
+        self, target_snapshots: t.Iterable[Snapshot], snapshots: t.Iterable[Snapshot]
     ) -> None:
         """Alters a physical snapshot table to match its snapshot's schema for the given collection of snapshots.
 
@@ -331,7 +330,7 @@ class SnapshotEvaluator:
         self,
         *,
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         start: t.Optional[TimeLike] = None,
         end: t.Optional[TimeLike] = None,
         execution_time: t.Optional[TimeLike] = None,
@@ -407,15 +406,16 @@ class SnapshotEvaluator:
     def _create_snapshot(
         self,
         snapshot: Snapshot,
-        snapshots: t.Dict[SnapshotId, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         on_complete: t.Optional[t.Callable[[SnapshotInfoLike], None]],
     ) -> None:
         if not snapshot.is_model:
             return
 
+        snapshots_by_id = {s.snapshot_id: s for s in snapshots}
         parent_snapshots_by_name = {
-            snapshots[p_sid].name: snapshots[p_sid] for p_sid in snapshot.parents
+            snapshots_by_id[p_sid].name: snapshots_by_id[p_sid] for p_sid in snapshot.parents
         }
         parent_snapshots_by_name[snapshot.name] = snapshot
 
@@ -427,7 +427,7 @@ class SnapshotEvaluator:
 
         render_kwargs: t.Dict[str, t.Any] = dict(
             engine_adapter=self.adapter,
-            snapshots=parent_snapshots_by_name,
+            snapshots=parent_snapshots_by_name.values(),
             deployability_index=deployability_index,
             runtime_stage=RuntimeStage.CREATING,
         )
@@ -475,24 +475,20 @@ class SnapshotEvaluator:
         if on_complete is not None:
             on_complete(snapshot)
 
-    def _migrate_snapshot(
-        self, snapshot: Snapshot, snapshots: t.Dict[SnapshotId, Snapshot]
-    ) -> None:
+    def _migrate_snapshot(self, snapshot: Snapshot, snapshots: t.Iterable[Snapshot]) -> None:
         if not snapshot.is_paused or snapshot.change_category not in (
             SnapshotChangeCategory.FORWARD_ONLY,
             SnapshotChangeCategory.INDIRECT_NON_BREAKING,
         ):
             return
 
-        parent_snapshots_by_name = {
-            snapshots[p_sid].name: snapshots[p_sid] for p_sid in snapshot.parents
-        }
-        parent_snapshots_by_name[snapshot.name] = snapshot
+        snapshots_by_id = {s.snapshot_id: s for s in snapshots}
+        parent_snapshots = {snapshots_by_id[p_sid] for p_sid in snapshot.parents} | {snapshot}
 
         tmp_table_name = snapshot.table_name(is_deployable=False)
         target_table_name = snapshot.table_name()
         _evaluation_strategy(snapshot, self.adapter).migrate(
-            snapshot, parent_snapshots_by_name, target_table_name, tmp_table_name
+            snapshot, parent_snapshots, target_table_name, tmp_table_name
         )
 
     def _promote_snapshot(
@@ -545,7 +541,7 @@ class SnapshotEvaluator:
         audit: Audit,
         audit_args: t.Dict[t.Any, t.Any],
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         start: t.Optional[TimeLike],
         end: t.Optional[TimeLike],
         execution_time: t.Optional[TimeLike],
@@ -636,7 +632,7 @@ class EvaluationStrategy(abc.ABC):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -656,7 +652,7 @@ class EvaluationStrategy(abc.ABC):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -693,7 +689,7 @@ class EvaluationStrategy(abc.ABC):
     def migrate(
         self,
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         target_table_name: str,
         source_table_name: str,
     ) -> None:
@@ -751,7 +747,7 @@ class SymbolicStrategy(EvaluationStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -762,7 +758,7 @@ class SymbolicStrategy(EvaluationStrategy):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -781,7 +777,7 @@ class SymbolicStrategy(EvaluationStrategy):
     def migrate(
         self,
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         target_table_name: str,
         source_table_name: str,
     ) -> None:
@@ -850,7 +846,7 @@ class MaterializableStrategy(PromotableStrategy):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -897,7 +893,7 @@ class MaterializableStrategy(PromotableStrategy):
     def migrate(
         self,
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         target_table_name: str,
         source_table_name: str,
     ) -> None:
@@ -915,7 +911,7 @@ class IncrementalByTimeRangeStrategy(MaterializableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -937,7 +933,7 @@ class IncrementalByUniqueKeyStrategy(MaterializableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -955,7 +951,7 @@ class IncrementalByUniqueKeyStrategy(MaterializableStrategy):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -975,7 +971,7 @@ class IncrementalUnmanagedStrategy(MaterializableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -994,7 +990,7 @@ class FullRefreshStrategy(MaterializableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -1017,7 +1013,7 @@ class SCDType2Strategy(MaterializableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -1039,7 +1035,7 @@ class SCDType2Strategy(MaterializableStrategy):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -1063,7 +1059,7 @@ class ViewStrategy(PromotableStrategy):
         snapshot: Snapshot,
         name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -1104,7 +1100,7 @@ class ViewStrategy(PromotableStrategy):
         snapshot: Snapshot,
         table_name: str,
         query_or_df: QueryOrDF,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
         **kwargs: t.Any,
     ) -> None:
@@ -1131,7 +1127,7 @@ class ViewStrategy(PromotableStrategy):
     def migrate(
         self,
         snapshot: Snapshot,
-        snapshots: t.Dict[str, Snapshot],
+        snapshots: t.Iterable[Snapshot],
         target_table_name: str,
         source_table_name: str,
     ) -> None:

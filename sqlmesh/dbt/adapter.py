@@ -168,7 +168,7 @@ class RuntimeAdapter(BaseAdapter):
         jinja_globals: t.Optional[t.Dict[str, t.Any]] = None,
         relation_type: t.Optional[t.Type[BaseRelation]] = None,
         quote_policy: t.Optional[Policy] = None,
-        snapshots: t.Optional[t.Dict[str, Snapshot]] = None,
+        snapshots: t.Optional[t.Iterable[Snapshot]] = None,
         table_mapping: t.Optional[t.Dict[str, str]] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
     ):
@@ -183,7 +183,7 @@ class RuntimeAdapter(BaseAdapter):
         self.relation_type = relation_type or BaseRelation
         self.quote_policy = quote_policy or Policy()
         self.table_mapping = {
-            **to_table_mapping((snapshots or {}).values(), deployability_index),
+            **to_table_mapping((snapshots or set()), deployability_index),
             **table_mapping,
         }
 
@@ -259,12 +259,16 @@ class RuntimeAdapter(BaseAdapter):
 
     def create_schema(self, relation: BaseRelation) -> None:
         if relation.schema is not None:
-            schema = self._normalize(schema_(relation.schema, self._get_database(relation.database)))
+            schema = self._normalize(
+                schema_(relation.schema, self._get_database(relation.database))
+            )
             self.engine_adapter.create_schema(schema)
 
     def drop_schema(self, relation: BaseRelation) -> None:
         if relation.schema is not None:
-            schema = self._normalize(schema_(relation.schema, self._get_database(relation.database)))
+            schema = self._normalize(
+                schema_(relation.schema, self._get_database(relation.database))
+            )
             self.engine_adapter.drop_schema(schema)
 
     def drop_relation(self, relation: BaseRelation) -> None:
@@ -322,6 +326,7 @@ class RuntimeAdapter(BaseAdapter):
     ) -> exp.Table:
         name = normalize_model_name(
             exp.table_(identifier or "", db=schema, catalog=database),
+            default_catalog=self.engine_adapter.default_catalog,
             dialect=self.engine_adapter.dialect,
         )
         if name not in self.table_mapping:
@@ -334,7 +339,11 @@ class RuntimeAdapter(BaseAdapter):
 
     def _relation_to_table(self, relation: BaseRelation) -> exp.Table:
         assert relation.identifier is not None
-        return exp.table_(relation.identifier, db=relation.schema, catalog=self._get_database(relation.database) if relation.schema else relation.database)
+        return exp.table_(
+            relation.identifier,
+            db=relation.schema,
+            catalog=self._get_database(relation.database) if relation.schema else relation.database,
+        )
 
     def _normalize(self, table: exp.Table) -> exp.Table:
         if self.quote_policy.identifier and isinstance(table.this, exp.Identifier):

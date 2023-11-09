@@ -49,7 +49,7 @@ def test_builtin_evaluator_push(sushi_context: Context, make_snapshot):
     sushi_context.upsert_model(new_model)
     sushi_context.upsert_model(new_view_model)
 
-    snapshots = sushi_context.snapshots
+    snapshots = sushi_context._model_fqn_to_snapshot
     new_model_snapshot = snapshots[new_model.name]
     new_view_model_snapshot = snapshots[new_view_model.name]
 

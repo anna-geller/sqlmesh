@@ -27,6 +27,7 @@ from sqlmesh.core.environment import EnvironmentNamingInfo
 from sqlmesh.core.snapshot import (
     Snapshot,
     SnapshotChangeCategory,
+    SnapshotId,
     SnapshotInfoLike,
     start_date,
 )
@@ -129,7 +130,7 @@ class Console(abc.ABC):
         self,
         context_diff: ContextDiff,
         no_diff: bool = True,
-        ignored_snapshot_names: t.Optional[t.Set[str]] = None,
+        ignored_snapshot_names: t.Optional[t.Set[SnapshotId]] = None,
     ) -> None:
         """Displays a summary of differences for the given models."""
 
@@ -424,16 +425,16 @@ class TerminalConsole(Console):
         self,
         context_diff: ContextDiff,
         no_diff: bool = True,
-        ignored_snapshot_names: t.Optional[t.Set[str]] = None,
+        ignored_snapshot_ids: t.Optional[t.Set[SnapshotId]] = None,
     ) -> None:
         """Shows a summary of the differences.
 
         Args:
             context_diff: The context diff to use to print the summary
             no_diff: Hide the actual SQL differences.
-            ignored_snapshot_names: A set of snapshot names that are ignored
+            ignored_snapshot_ids: A set of snapshot ids that are ignored
         """
-        ignored_snapshot_names = ignored_snapshot_names or set()
+        ignored_snapshot_ids = ignored_snapshot_ids or set()
         if context_diff.is_new_environment:
             self._print(
                 Tree(
@@ -453,14 +454,14 @@ class TerminalConsole(Console):
             "Models",
             lambda x: x.is_model,
             no_diff=no_diff,
-            ignored_names=ignored_snapshot_names,
+            ignored_snapshot_ids=ignored_snapshot_ids,
         )
         self._show_summary_tree_for(
             context_diff,
             "Standalone Audits",
             lambda x: x.is_audit,
             no_diff=no_diff,
-            ignored_names=ignored_snapshot_names,
+            ignored_snapshot_ids=ignored_snapshot_ids,
         )
 
     def plan(self, plan: Plan, auto_apply: bool, no_diff: bool = False) -> None:
@@ -481,13 +482,13 @@ class TerminalConsole(Console):
             plan.apply()
 
     def _get_ignored_tree(
-        self, ignored_snapshot_names: t.Set[str], snapshots: t.Dict[str, Snapshot]
+        self, ignored_snapshot_ids: t.Set[SnapshotId], snapshots: t.Dict[SnapshotId, Snapshot]
     ) -> Tree:
         ignored = Tree(f"[bold][ignored]Ignored Models (Expected Plan Start):")
-        for model in ignored_snapshot_names:
-            snapshot = snapshots[model]
+        for s_id in ignored_snapshot_ids:
+            snapshot = snapshots[s_id]
             ignored.add(
-                f"[ignored]{model} ({snapshot.get_latest(start_date(snapshot, snapshots.values()))})"
+                f"[ignored]{s_id.name} ({snapshot.get_latest(start_date(snapshot, snapshots.values()))})"
             )
         return ignored
 
@@ -497,71 +498,76 @@ class TerminalConsole(Console):
         header: str,
         snapshot_selector: t.Callable[[SnapshotInfoLike], bool],
         no_diff: bool = True,
-        ignored_names: t.Optional[t.Set[str]] = None,
+        ignored_snapshot_ids: t.Optional[t.Set[SnapshotId]] = None,
     ) -> None:
-        ignored_names = ignored_names or set()
+        ignored_snapshot_ids = ignored_snapshot_ids or set()
         selected_snapshots = {
-            name: snapshot
-            for name, snapshot in context_diff.snapshots.items()
+            s_id: snapshot
+            for s_id, snapshot in context_diff.snapshots.items()
             if snapshot_selector(snapshot)
         }
-        selected_ignored_names = {name for name in selected_snapshots if name in ignored_names}
-        added_names = {
-            name for name in context_diff.added if snapshot_selector(context_diff.snapshots[name])
-        } - selected_ignored_names
-        removed_names = {
-            name
-            for name, snapshot in context_diff.removed_snapshots.items()
+        selected_ignored_snapshot_ids = {
+            s_id for s_id in selected_snapshots if s_id in ignored_snapshot_ids
+        }
+        added_snapshot_ids = {
+            s_id for s_id in context_diff.added if snapshot_selector(context_diff.snapshots[s_id])
+        } - selected_ignored_snapshot_ids
+        removed_snapshot_ids = {
+            s_id
+            for s_id, snapshot in context_diff.removed_snapshots.items()
             if snapshot_selector(snapshot)
-        } - selected_ignored_names
-        modified_names = {
-            name
-            for name, snapshots in context_diff.modified_snapshots.items()
+        } - selected_ignored_snapshot_ids
+        modified_snapshot_ids = {
+            s_id
+            for s_id, snapshots in context_diff.modified_snapshots.items()
             if snapshot_selector(snapshots[0])
-        } - selected_ignored_names
+        } - selected_ignored_snapshot_ids
 
-        tree_sets = (added_names, removed_names, modified_names, selected_ignored_names)
-        if all(not names for names in tree_sets):
+        tree_sets = (
+            added_snapshot_ids,
+            removed_snapshot_ids,
+            modified_snapshot_ids,
+            selected_ignored_snapshot_ids,
+        )
+        if all(not s_ids for s_ids in tree_sets):
             return
 
         tree = Tree(f"[bold]{header}:")
-        if added_names:
+        if added_snapshot_ids:
             added_tree = Tree(f"[bold][added]Added:")
-            for name in added_names:
-                added_tree.add(f"[added]{name}")
+            for s_id in added_snapshot_ids:
+                added_tree.add(f"[added]{s_id.name}")
             tree.add(added_tree)
-        if removed_names:
+        if removed_snapshot_ids:
             removed_tree = Tree(f"[bold][removed]Removed:")
-            for name in removed_names:
-                removed_tree.add(f"[removed]{name}")
+            for s_id in removed_snapshot_ids:
+                removed_tree.add(f"[removed]{s_id.name}")
             tree.add(removed_tree)
-        if modified_names:
+        if modified_snapshot_ids:
             direct = Tree(f"[bold][direct]Directly Modified:")
             indirect = Tree(f"[bold][indirect]Indirectly Modified:")
             metadata = Tree(f"[bold][metadata]Metadata Updated:")
-            for name in modified_names:
-                if context_diff.directly_modified(name):
+            for s_id in modified_snapshot_ids:
+                if context_diff.directly_modified(s_id):
                     direct.add(
-                        f"[direct]{name}"
+                        f"[direct]{s_id.name}"
                         if no_diff
                         else Syntax(
-                            f"{name}\n{context_diff.text_diff(name)}", "sql", word_wrap=True
+                            f"{s_id.name}\n{context_diff.text_diff(s_id)}", "sql"
                         )
                     )
-                elif context_diff.indirectly_modified(name):
-                    indirect.add(f"[indirect]{name}")
-                elif context_diff.metadata_updated(name):
-                    metadata.add(
-                        Syntax(f"{name}\n{context_diff.text_diff(name)}", "sql", word_wrap=True)
-                    )
+                elif context_diff.indirectly_modified(s_id):
+                    indirect.add(f"[indirect]{s_id.name}")
+                elif context_diff.metadata_updated(s_id):
+                    metadata.add(Syntax(f"{s_id.name}\n{context_diff.text_diff(s_id)}", "sql"))
             if direct.children:
                 tree.add(direct)
             if indirect.children:
                 tree.add(indirect)
             if metadata.children:
                 tree.add(metadata)
-        if selected_ignored_names:
-            tree.add(self._get_ignored_tree(selected_ignored_names, selected_snapshots))
+        if selected_ignored_snapshot_ids:
+            tree.add(self._get_ignored_tree(selected_ignored_snapshot_ids, selected_snapshots))
         self._print(tree)
 
     def _show_options_after_categorization(self, plan: Plan, auto_apply: bool) -> None:
@@ -580,7 +586,7 @@ class TerminalConsole(Console):
     def _prompt_categorize(self, plan: Plan, auto_apply: bool, no_diff: bool = False) -> None:
         """Get the user's change category for the directly modified models."""
         self.show_model_difference_summary(
-            plan.context_diff, ignored_snapshot_names=plan.ignored_snapshot_names
+            plan.context_diff, ignored_snapshot_ids=plan.ignored_snapshot_ids
         )
 
         if not no_diff:
@@ -588,36 +594,36 @@ class TerminalConsole(Console):
 
         for snapshot in plan.uncategorized:
             if not no_diff:
-                self.show_sql(plan.context_diff.text_diff(snapshot.name))
+                self.show_sql(plan.context_diff.text_diff(snapshot.snapshot_id))
             tree = Tree(f"[bold][direct]Directly Modified: {snapshot.name}")
             indirect_tree = None
 
-            for child in plan.indirectly_modified[snapshot.name]:
+            for child in plan.indirectly_modified[snapshot.snapshot_id]:
                 if not indirect_tree:
                     indirect_tree = Tree(f"[indirect]Indirectly Modified Children:")
                     tree.add(indirect_tree)
-                indirect_tree.add(f"[indirect]{child}")
+                indirect_tree.add(f"[indirect]{child.name}")
             self._print(tree)
             self._get_snapshot_change_category(snapshot, plan, auto_apply)
 
     def _show_categorized_snapshots(self, plan: Plan) -> None:
         context_diff = plan.context_diff
         for snapshot in plan.categorized:
-            if not context_diff.directly_modified(snapshot.name):
+            if not context_diff.directly_modified(snapshot.snapshot_id):
                 continue
 
             category_str = SNAPSHOT_CHANGE_CATEGORY_STR[snapshot.change_category]
             tree = Tree(f"[bold][direct]Directly Modified: {snapshot.name} ({category_str})")
             indirect_tree = None
-            for child in plan.indirectly_modified[snapshot.name]:
+            for child in plan.indirectly_modified[snapshot.snapshot_id]:
                 if not indirect_tree:
                     indirect_tree = Tree(f"[indirect]Indirectly Modified Children:")
                     tree.add(indirect_tree)
                 child_category_str = SNAPSHOT_CHANGE_CATEGORY_STR[
                     plan.context_diff.snapshots[child].change_category
                 ]
-                indirect_tree.add(f"[indirect]{child} ({child_category_str})")
-            self._print(Syntax(context_diff.text_diff(snapshot.name), "sql", word_wrap=True))
+                indirect_tree.add(f"[indirect]{child.name} ({child_category_str})")
+            self._print(Syntax(context_diff.text_diff(snapshot.snapshot_id), "sql", word_wrap=True))
             self._print(tree)
 
     def _show_missing_dates(self, plan: Plan) -> None:
@@ -626,7 +632,7 @@ class TerminalConsole(Console):
             return
         backfill = Tree("[bold]Models needing backfill (missing dates):")
         for missing in plan.missing_intervals:
-            snapshot = plan.context_diff.snapshots[missing.snapshot_name]
+            snapshot = plan.context_diff.snapshots[missing.snapshot_id]
             if not snapshot.is_model:
                 continue
             view_name = snapshot.qualified_view_name.for_environment(plan.environment_naming_info)
@@ -674,9 +680,9 @@ class TerminalConsole(Console):
                 )
                 if end:
                     plan.end = end
-        if plan.ignored_snapshot_names:
+        if plan.ignored_snapshot_ids:
             self._print(
-                self._get_ignored_tree(plan.ignored_snapshot_names, plan.context_diff.snapshots)
+                self._get_ignored_tree(plan.ignored_snapshot_ids, plan.context_diff.snapshots)
             )
         if not auto_apply and self._confirm(f"Apply - {backfill_or_preview.capitalize()} Tables"):
             plan.apply()
@@ -1155,16 +1161,16 @@ class MarkdownConsole(CaptureTerminalConsole):
         self,
         context_diff: ContextDiff,
         no_diff: bool = True,
-        ignored_snapshot_names: t.Optional[t.Set[str]] = None,
+        ignored_snapshot_ids: t.Optional[t.Set[SnapshotId]] = None,
     ) -> None:
         """Shows a summary of the differences.
 
         Args:
             context_diff: The context diff to use to print the summary.
             no_diff: Hide the actual SQL differences.
-            ignored_snapshot_names: A set of snapshot names that are ignored
+            ignored_snapshot_ids: A set of snapshot names that are ignored
         """
-        ignored_snapshot_names = ignored_snapshot_names or set()
+        ignored_snapshot_ids = ignored_snapshot_ids or set()
         if context_diff.is_new_environment:
             self._print(
                 f"**New environment `{context_diff.environment}` will be created from `{context_diff.create_from}`**\n\n"
@@ -1178,77 +1184,77 @@ class MarkdownConsole(CaptureTerminalConsole):
 
         self._print(f"**Summary of differences against `{context_diff.environment}`:**\n\n")
 
-        added_model_names = {
-            name for name in context_diff.added if context_diff.snapshots[name].is_model
-        } - ignored_snapshot_names
-        if added_model_names:
+        added_snapshot_ids = {
+            s_id for s_id in context_diff.added if context_diff.snapshots[s_id].is_model
+        } - ignored_snapshot_ids
+        if added_snapshot_ids:
             self._print(f"**Added Models:**\n")
-            for model_name in added_model_names:
-                self._print(f"- {model_name}\n")
+            for s_id in added_snapshot_ids:
+                self._print(f"- {s_id.name}\n")
             self._print("\n")
 
-        added_audit_names = {
-            name for name in context_diff.added if context_diff.snapshots[name].is_audit
-        } - ignored_snapshot_names
-        if added_audit_names:
+        added_audit_snapshot_ids = {
+            s_id for s_id in context_diff.added if context_diff.snapshots[s_id].is_audit
+        } - ignored_snapshot_ids
+        if added_audit_snapshot_ids:
             self._print(f"**Added Standalone Audits:**\n")
-            for audit_name in added_audit_names:
-                self._print(f"- {audit_name}\n")
+            for s_id in added_audit_snapshot_ids:
+                self._print(f"- {s_id.name}\n")
             self._print("\n")
 
-        removed_model_names = {
-            name for name, snapshot in context_diff.removed_snapshots.items() if snapshot.is_model
-        } - ignored_snapshot_names
-        if removed_model_names:
+        removed_snapshot_ids = {
+            s_id for s_id, snapshot in context_diff.removed_snapshots.items() if snapshot.is_model
+        } - ignored_snapshot_ids
+        if removed_snapshot_ids:
             self._print(f"**Removed Models:**\n")
-            for model_name in removed_model_names:
-                self._print(f"- {model_name}\n")
+            for s_id in removed_snapshot_ids:
+                self._print(f"- {s_id.name}\n")
             self._print("\n")
 
-        removed_audit_names = {
-            name for name, snapshot in context_diff.removed_snapshots.items() if snapshot.is_audit
-        } - ignored_snapshot_names
-        if removed_audit_names:
+        removed_audit_snapshot_ids = {
+            s_id for s_id, snapshot in context_diff.removed_snapshots.items() if snapshot.is_audit
+        } - ignored_snapshot_ids
+        if removed_audit_snapshot_ids:
             self._print(f"**Removed Standalone Audits:**\n")
-            for audit_name in removed_audit_names:
-                self._print(f"- {audit_name}\n")
+            for s_id in removed_audit_snapshot_ids:
+                self._print(f"- {s_id.name}\n")
             self._print("\n")
 
-        modified_model_names = context_diff.modified_snapshots.keys() - ignored_snapshot_names
-        if modified_model_names:
+        modified_snapshot_ids = context_diff.modified_snapshots.keys() - ignored_snapshot_ids
+        if modified_snapshot_ids:
             directly_modified = []
             indirectly_modified = []
             metadata_modified = []
-            for model_name in modified_model_names:
-                if context_diff.directly_modified(model_name):
-                    directly_modified.append(model_name)
-                elif context_diff.indirectly_modified(model_name):
-                    indirectly_modified.append(model_name)
-                elif context_diff.metadata_updated(model_name):
-                    metadata_modified.append(model_name)
+            for s_id in modified_snapshot_ids:
+                if context_diff.directly_modified(s_id):
+                    directly_modified.append(s_id)
+                elif context_diff.indirectly_modified(s_id):
+                    indirectly_modified.append(s_id)
+                elif context_diff.metadata_updated(s_id):
+                    metadata_modified.append(s_id)
             if directly_modified:
                 self._print(f"**Directly Modified:**\n")
-                for model_name in directly_modified:
-                    self._print(f"- `{model_name}`\n")
+                for s_id in directly_modified:
+                    self._print(f"- `{s_id.name}`\n")
                     if not no_diff:
-                        self._print(f"```diff\n{context_diff.text_diff(model_name)}\n```\n")
+                        self._print(f"```diff\n{context_diff.text_diff(s_id)}\n```\n")
                 self._print("\n")
             if indirectly_modified:
                 self._print(f"**Indirectly Modified:**\n")
-                for model_name in indirectly_modified:
-                    self._print(f"- `{model_name}`\n")
+                for s_id in indirectly_modified:
+                    self._print(f"- `{s_id.name}`\n")
                 self._print("\n")
             if metadata_modified:
                 self._print(f"**Metadata Updated:**\n")
-                for model_name in metadata_modified:
-                    self._print(f"- `{model_name}`\n")
+                for s_id in metadata_modified:
+                    self._print(f"- `{s_id.name}`\n")
                 self._print("\n")
-        if ignored_snapshot_names:
+        if ignored_snapshot_ids:
             self._print(f"**Ignored Models (Expected Plan Start):**\n")
-            for model_name in ignored_snapshot_names:
-                snapshot = context_diff.snapshots[model_name]
+            for s_id in ignored_snapshot_ids:
+                snapshot = context_diff.snapshots[s_id]
                 self._print(
-                    f"- `{model_name}` ({snapshot.get_latest(start_date(snapshot, context_diff.snapshots.values()))})\n"
+                    f"- `{s_id.name}` ({snapshot.get_latest(start_date(snapshot, context_diff.snapshots.values()))})\n"
                 )
             self._print("\n")
 
@@ -1258,7 +1264,7 @@ class MarkdownConsole(CaptureTerminalConsole):
             return
         self._print("**Models needing backfill (missing dates):**\n\n")
         for missing in plan.missing_intervals:
-            snapshot = plan.context_diff.snapshots[missing.snapshot_name]
+            snapshot = plan.context_diff.snapshots[missing.snapshot_id]
             view_name = snapshot.qualified_view_name.for_environment(plan.environment_naming_info)
             self._print(
                 f"* `{view_name}`: {missing.format_intervals(snapshot.node.interval_unit)}\n"
@@ -1268,21 +1274,21 @@ class MarkdownConsole(CaptureTerminalConsole):
     def _show_categorized_snapshots(self, plan: Plan) -> None:
         context_diff = plan.context_diff
         for snapshot in plan.categorized:
-            if not context_diff.directly_modified(snapshot.name):
+            if not context_diff.directly_modified(snapshot.snapshot_id):
                 continue
 
             category_str = SNAPSHOT_CHANGE_CATEGORY_STR[snapshot.change_category]
             tree = Tree(f"[bold][direct]Directly Modified: {snapshot.name} ({category_str})")
             indirect_tree = None
-            for child in plan.indirectly_modified[snapshot.name]:
+            for child in plan.indirectly_modified[snapshot.snapshot_id]:
                 if not indirect_tree:
                     indirect_tree = Tree(f"[indirect]Indirectly Modified Children:")
                     tree.add(indirect_tree)
                 child_category_str = SNAPSHOT_CHANGE_CATEGORY_STR[
                     plan.context_diff.snapshots[child].change_category
                 ]
-                indirect_tree.add(f"[indirect]{child} ({child_category_str})")
-            self._print(f"```diff\n{context_diff.text_diff(snapshot.name)}\n```\n")
+                indirect_tree.add(f"[indirect]{child.name} ({child_category_str})")
+            self._print(f"```diff\n{context_diff.text_diff(snapshot.snapshot_id)}\n```\n")
             self._print("```\n")
             self._print(tree)
             self._print("\n```")
@@ -1314,7 +1320,7 @@ class DatabricksMagicConsole(CaptureTerminalConsole):
 
     def __init__(self, *args: t.Any, **kwargs: t.Any) -> None:
         super().__init__(*args, **kwargs)
-        self.evaluation_batch_progress: t.Dict[str, t.Tuple[str, int]] = {}
+        self.evaluation_batch_progress: t.Dict[SnapshotId, t.Tuple[str, int]] = {}
         self.promotion_status: t.Tuple[int, int] = (0, 0)
         self.model_creation_status: t.Tuple[int, int] = (0, 0)
         self.migration_status: t.Tuple[int, int] = (0, 0)
@@ -1343,21 +1349,21 @@ class DatabricksMagicConsole(CaptureTerminalConsole):
         self.evaluation_environment_naming_info = environment_naming_info
 
     def start_snapshot_evaluation_progress(self, snapshot: Snapshot) -> None:
-        if not self.evaluation_batch_progress.get(snapshot.name):
+        if not self.evaluation_batch_progress.get(snapshot.snapshot_id):
             view_name = snapshot.qualified_view_name.for_environment(
                 self.evaluation_environment_naming_info
             )
-            self.evaluation_batch_progress[snapshot.name] = (view_name, 0)
+            self.evaluation_batch_progress[snapshot.snapshot_id] = (view_name, 0)
             print(f"Starting '{view_name}', Total batches: {self.evaluation_batches[snapshot]}")
 
     def update_snapshot_evaluation_progress(
         self, snapshot: Snapshot, batch_idx: int, duration_ms: t.Optional[int]
     ) -> None:
-        view_name, loaded_batches = self.evaluation_batch_progress[snapshot.name]
+        view_name, loaded_batches = self.evaluation_batch_progress[snapshot.snapshot_id]
         total_batches = self.evaluation_batches[snapshot]
 
         loaded_batches += 1
-        self.evaluation_batch_progress[snapshot.name] = (view_name, loaded_batches)
+        self.evaluation_batch_progress[snapshot.snapshot_id] = (view_name, loaded_batches)
 
         finished_loading = loaded_batches == total_batches
         status = "Loaded" if finished_loading else "Loading"
@@ -1367,7 +1373,7 @@ class DatabricksMagicConsole(CaptureTerminalConsole):
                 [
                     s
                     for s, total in self.evaluation_batches.items()
-                    if self.evaluation_batch_progress.get(s.name, (None, -1))[1] == total
+                    if self.evaluation_batch_progress.get(s.snapshot_id, (None, -1))[1] == total
                 ]
             )
             total = len(self.evaluation_batch_progress)

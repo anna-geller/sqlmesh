@@ -107,15 +107,17 @@ class StateReader(abc.ABC):
         """
 
     @abc.abstractmethod
-    def nodes_exist(self, names: t.Iterable[str], exclude_external: bool = False) -> t.Set[str]:
-        """Returns the node names that exist in the state sync.
+    def get_snapshots_by_name(
+        self, names: t.Iterable[str], exclude_external: bool = False
+    ) -> t.Set[Snapshot]:
+        """Get all snapshots that have the given snapshot name.
 
         Args:
-            names: Iterable of node names to check.
-            exclude_external: Whether to exclude external models from the output.
+            names: Iterable of snapshot names to check.
+            exclude_external: Whether to exclude snapshots of external models from the output.
 
         Returns:
-            A set of all the existing node names.
+            A list of all snapshots that match.
         """
 
     @abc.abstractmethod

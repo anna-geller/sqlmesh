@@ -148,7 +148,9 @@ class TestContext:
 
     def schema(self, schema_name: str, catalog_name: t.Optional[str] = None) -> str:
         return normalize_model_name(
-            ".".join(p for p in (catalog_name, schema_name) if p), default_catalog=None, dialect=self.dialect
+            ".".join(p for p in (catalog_name, schema_name) if p),
+            default_catalog=None,
+            dialect=self.dialect,
         )
 
     def get_current_data(self, table: exp.Table) -> pd.DataFrame:

@@ -1495,13 +1495,15 @@ def test_star_expansion(assert_exp_eq) -> None:
         """,
     )
 
-    snapshots = context.snapshots
+    snapshots = {snapshot.fqn: snapshot for snapshot in context.snapshots}
     snapshots["db.model1"].categorize_as(SnapshotChangeCategory.BREAKING)
     snapshots["db.model2"].categorize_as(SnapshotChangeCategory.BREAKING)
     snapshots["db.model3"].categorize_as(SnapshotChangeCategory.BREAKING)
 
     assert_exp_eq(
-        context.models["db.model2"].render_query(snapshots=snapshots),
+        context._model_fqn_to_snapshot["db.model2"].model.render_query(
+            snapshots=snapshots.values()
+        ),
         f"""
         SELECT
           "model1"."id" AS "id",
@@ -1512,7 +1514,7 @@ def test_star_expansion(assert_exp_eq) -> None:
     )
 
     assert_exp_eq(
-        context.models["db.model3"].render_query(snapshots=snapshots),
+        context.models["db.model3"].render_query(snapshots=snapshots.values()),
         f"""
         SELECT
           "model2"."id" AS "id",

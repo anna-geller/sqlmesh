@@ -25,14 +25,8 @@ class TestExecutionContext(ExecutionContext):
         self.is_dev = True
         self._engine_adapter = engine_adapter
         self.__model_tables = {name: _fully_qualified_test_fixture_name(name) for name in models}
-        self.__model_name_mapping = {model.name: model for model in models.values()}
 
     @property
     def _model_tables(self) -> t.Dict[str, str]:
         """Returns a mapping of model names to tables."""
         return self.__model_tables
-
-    @property
-    def _model_name_mapping(self) -> t.Dict[str, Model]:
-        """Returns a mapping of model names to models."""
-        return self.__model_name_mapping

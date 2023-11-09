@@ -695,7 +695,9 @@ def test_bigquery_table_properties(sushi_test_project: Project, mocker: MockerFi
 
 def test_snapshot_json_payload():
     sushi_context = Context(paths=["tests/fixtures/dbt/sushi_test"])
-    snapshot_json = json.loads(_snapshot_to_json(sushi_context.snapshots["sushi.top_waiters"]))
+    snapshot_json = json.loads(
+        _snapshot_to_json(sushi_context._model_fqn_to_snapshot["memory.sushi.top_waiters"])
+    )
     assert snapshot_json["node"]["jinja_macros"]["global_objs"]["target"] == {
         "type": "duckdb",
         "name": "in_memory",
