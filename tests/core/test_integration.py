@@ -3,6 +3,7 @@ import shutil
 import typing as t
 from collections import Counter
 from datetime import timedelta
+from unittest.mock import PropertyMock
 
 import numpy as np
 import pandas as pd
@@ -13,7 +14,11 @@ from sqlglot import exp
 from sqlglot.expressions import DataType
 
 from sqlmesh.core import constants as c
-from sqlmesh.core.config import AutoCategorizationMode
+from sqlmesh.core.config import (
+    AutoCategorizationMode,
+    CategorizerConfig,
+    DuckDBConnectionConfig,
+)
 from sqlmesh.core.console import Console
 from sqlmesh.core.context import Context
 from sqlmesh.core.engine_adapter import EngineAdapter
@@ -35,6 +40,7 @@ from sqlmesh.core.snapshot import (
     SnapshotInfoLike,
     SnapshotTableInfo,
 )
+from sqlmesh.core.state_sync import EngineAdapterStateSync
 from sqlmesh.utils.date import (
     TimeLike,
     to_date,
@@ -43,6 +49,7 @@ from sqlmesh.utils.date import (
     to_timestamp,
     to_ts,
 )
+from sqlmesh.utils.errors import SQLMeshError
 from tests.conftest import DuckDBMetadata, SushiDataValidator, init_and_plan_context
 
 
@@ -64,7 +71,6 @@ def plan_choice(plan: Plan, choice: SnapshotChangeCategory) -> None:
 @pytest.mark.parametrize(
     "context_fixture",
     ["sushi_context", "sushi_default_catalog"],
-    # ["sushi_default_catalog"],
 )
 def test_forward_only_plan_with_effective_date(context_fixture: Context, request):
     context = request.getfixturevalue(context_fixture)
@@ -204,7 +210,7 @@ def test_forward_only_model_regular_plan(mocker: MockerFixture):
     context, plan = init_and_plan_context("examples/sushi", mocker)
     context.apply(plan)
 
-    model_name = "sushi.waiter_revenue_by_day"
+    model_name = "memory.sushi.waiter_revenue_by_day"
 
     model = context.models[model_name]
     model = add_projection_to_model(t.cast(SqlModel, model))
@@ -213,7 +219,7 @@ def test_forward_only_model_regular_plan(mocker: MockerFixture):
 
     context.upsert_model(model)
     snapshot = context._model_fqn_to_snapshot[model.fqn]
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
@@ -299,12 +305,12 @@ def test_plan_set_choice_is_reflected_in_missing_intervals(mocker: MockerFixture
     context, plan = init_and_plan_context("examples/sushi", mocker)
     context.apply(plan)
 
-    model_name = "sushi.waiter_revenue_by_day"
+    model_name = "memory.sushi.waiter_revenue_by_day"
 
     model = context.models[model_name]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
     snapshot = context._model_fqn_to_snapshot[model.fqn]
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
@@ -439,10 +445,12 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
     context, plan = init_and_plan_context("examples/sushi", mocker)
     context.apply(plan)
 
-    model = context.models["sushi.waiter_revenue_by_day"]
+    model = context.models["memory.sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
-    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot[
+        "memory.sushi.waiter_revenue_by_day"
+    ]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True, forward_only=True)
     assert len(plan.new_snapshots) == 2
@@ -481,10 +489,10 @@ def test_non_breaking_change_after_forward_only_in_dev(mocker: MockerFixture):
     context.plan("dev", no_prompts=True, skip_tests=True, auto_apply=True)
 
     # Make a non-breaking change to a model downstream.
-    model = context.models["sushi.top_waiters"]
+    model = context.models["memory.sushi.top_waiters"]
     # Select 'one' column from the updated upstream model.
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model), literal=False))
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 1
@@ -558,7 +566,7 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     context.apply(plan)
 
     # Make sushi.orders a forward-only model.
-    model = context.models["sushi.orders"]
+    model = context.models["memory.sushi.orders"]
     updated_model_kind = model.kind.copy(update={"forward_only": True})
     model = model.copy(update={"stamp": "force new version", "kind": updated_model_kind})
     context.upsert_model(model)
@@ -573,9 +581,9 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     context.apply(plan)
 
     # Make a non-breaking change to a model.
-    model = context.models["sushi.top_waiters"]
+    model = context.models["memory.sushi.top_waiters"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 1
@@ -603,10 +611,12 @@ def test_indirect_non_breaking_change_after_forward_only_in_dev(mocker: MockerFi
     context.apply(plan)
 
     # Make a non-breaking change upstream from the previously modified model.
-    model = context.models["sushi.waiter_revenue_by_day"]
+    model = context.models["memory.sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, model)))
-    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
-    top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    waiter_revenue_by_day_snapshot = context._model_fqn_to_snapshot[
+        "memory.sushi.waiter_revenue_by_day"
+    ]
+    top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert len(plan.new_snapshots) == 2
@@ -680,7 +690,7 @@ def test_forward_only_precedence_over_indirect_non_breaking(mocker: MockerFixtur
     context.apply(plan)
 
     # Make sushi.orders a forward-only model.
-    forward_only_model = context.models["sushi.orders"]
+    forward_only_model = context.models["memory.sushi.orders"]
     updated_model_kind = forward_only_model.kind.copy(update={"forward_only": True})
     forward_only_model = forward_only_model.copy(
         update={"stamp": "force new version", "kind": updated_model_kind}
@@ -688,10 +698,10 @@ def test_forward_only_precedence_over_indirect_non_breaking(mocker: MockerFixtur
     context.upsert_model(forward_only_model)
     forward_only_snapshot = context._model_fqn_to_snapshot[forward_only_model.fqn]
 
-    non_breaking_model = context.models["sushi.waiter_revenue_by_day"]
+    non_breaking_model = context.models["memory.sushi.waiter_revenue_by_day"]
     context.upsert_model(add_projection_to_model(t.cast(SqlModel, non_breaking_model)))
     non_breaking_snapshot = context._model_fqn_to_snapshot[non_breaking_model.fqn]
-    top_waiter_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+    top_waiter_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
 
     plan = context.plan("dev", no_prompts=True, skip_tests=True)
     assert (
@@ -766,21 +776,24 @@ def test_select_models_for_backfill(mocker: MockerFixture):
     plan = context.plan(
         "dev", backfill_models=["*waiter_revenue_by_day"], no_prompts=True, skip_tests=True
     )
+
     assert plan.missing_intervals == [
         SnapshotIntervals(
-            snapshot_name="sushi.items",
+            snapshot_id=context._model_fqn_to_snapshot["memory.sushi.items"].snapshot_id,
             intervals=expected_intervals,
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.orders",
+            snapshot_id=context._model_fqn_to_snapshot["memory.sushi.orders"].snapshot_id,
             intervals=expected_intervals,
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.order_items",
+            snapshot_id=context._model_fqn_to_snapshot["memory.sushi.order_items"].snapshot_id,
             intervals=expected_intervals,
         ),
         SnapshotIntervals(
-            snapshot_name="sushi.waiter_revenue_by_day",
+            snapshot_id=context._model_fqn_to_snapshot[
+                "memory.sushi.waiter_revenue_by_day"
+            ].snapshot_id,
             intervals=expected_intervals,
         ),
     ]
@@ -800,7 +813,7 @@ def test_select_models_for_backfill(mocker: MockerFixture):
 @pytest.mark.core_integration
 @pytest.mark.parametrize(
     "context_fixture",
-    ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_default_catalog"],
+    ["sushi_context", "sushi_dbt_context", "sushi_test_dbt_context", "sushi_no_default_catalog"],
 )
 def test_model_add(context_fixture: Context, request):
     initial_add(request.getfixturevalue(context_fixture), "dev")
@@ -812,16 +825,18 @@ def test_model_removed(sushi_context: Context):
     environment = "dev"
     initial_add(sushi_context, environment)
 
-    top_waiters_snapshot_id = sushi_context._model_fqn_to_snapshot["sushi.top_waiters"].snapshot_id
+    top_waiters_snapshot_id = sushi_context._model_fqn_to_snapshot[
+        "memory.sushi.top_waiters"
+    ].snapshot_id
 
-    sushi_context._models.pop("sushi.top_waiters")
+    sushi_context._models.pop("memory.sushi.top_waiters")
 
     def _validate_plan(context, plan):
         validate_plan_changes(plan, removed=[top_waiters_snapshot_id])
         assert not plan.missing_intervals
 
     def _validate_apply(context):
-        assert not sushi_context._model_fqn_to_snapshot.get("sushi.top_waiters")
+        assert not sushi_context._model_fqn_to_snapshot.get("memory.sushi.top_waiters")
         assert sushi_context.state_reader.get_snapshots([top_waiters_snapshot_id])
         env = sushi_context.state_reader.get_environment(environment)
         assert env
@@ -865,7 +880,9 @@ def test_forward_only(sushi_context: Context):
 def test_logical_change(sushi_context: Context):
     environment = "dev"
     initial_add(sushi_context, environment)
-    previous_sushi_items_version = sushi_context._model_fqn_to_snapshot["sushi.items"].version
+    previous_sushi_items_version = sushi_context._model_fqn_to_snapshot[
+        "memory.sushi.items"
+    ].version
 
     change_data_type(
         sushi_context,
@@ -884,7 +901,8 @@ def test_logical_change(sushi_context: Context):
     apply_to_environment(sushi_context, environment, SnapshotChangeCategory.NON_BREAKING)
 
     assert (
-        sushi_context._model_fqn_to_snapshot["sushi.items"].version == previous_sushi_items_version
+        sushi_context._model_fqn_to_snapshot["memory.sushi.items"].version
+        == previous_sushi_items_version
     )
 
 
@@ -903,15 +921,15 @@ def validate_query_change(
         DataType.Type.FLOAT,
     )
 
-    directly_modified = [context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
+    directly_modified = [context._model_fqn_to_snapshot["memory.sushi.items"].snapshot_id]
     indirectly_modified = [
         context._model_fqn_to_snapshot[model_name].snapshot_id
         for model_name in [
-            "sushi.order_items",
-            "sushi.waiter_revenue_by_day",
-            "sushi.customer_revenue_by_day",
-            "sushi.customer_revenue_lifetime",
-            "sushi.top_waiters",
+            "memory.sushi.order_items",
+            "memory.sushi.waiter_revenue_by_day",
+            "memory.sushi.customer_revenue_by_day",
+            "memory.sushi.customer_revenue_lifetime",
+            "memory.sushi.top_waiters",
             "assert_item_price_above_zero",
         ]
     ]
@@ -971,7 +989,7 @@ def validate_query_change(
 )
 def test_model_kind_change(from_: ModelKindName, to: ModelKindName, sushi_context: Context):
     environment = f"test_model_kind_change__{from_.value.lower()}__{to.value.lower()}"
-    incremental_snapshot = sushi_context._model_fqn_to_snapshot["sushi.items"].copy()
+    incremental_snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.items"].copy()
 
     if from_ != ModelKindName.INCREMENTAL_BY_TIME_RANGE:
         change_model_kind(sushi_context, from_)
@@ -1003,15 +1021,15 @@ def validate_model_kind_change(
     *,
     logical: bool,
 ):
-    directly_modified = [context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
+    directly_modified = [context._model_fqn_to_snapshot["memory.sushi.items"].snapshot_id]
     indirectly_modified = [
         context._model_fqn_to_snapshot[model_name].snapshot_id
         for model_name in [
-            "sushi.order_items",
-            "sushi.waiter_revenue_by_day",
-            "sushi.customer_revenue_by_day",
-            "sushi.customer_revenue_lifetime",
-            "sushi.top_waiters",
+            "memory.sushi.order_items",
+            "memory.sushi.waiter_revenue_by_day",
+            "memory.sushi.customer_revenue_by_day",
+            "memory.sushi.customer_revenue_lifetime",
+            "memory.sushi.top_waiters",
             "assert_item_price_above_zero",
         ]
     ]
@@ -1053,15 +1071,15 @@ def test_environment_isolation(sushi_context: Context):
         DataType.Type.DOUBLE,
         DataType.Type.FLOAT,
     )
-    directly_modified = [sushi_context._model_fqn_to_snapshot["sushi.items"].snapshot_id]
+    directly_modified = [sushi_context._model_fqn_to_snapshot["memory.sushi.items"].snapshot_id]
     indirectly_modified = [
         sushi_context._model_fqn_to_snapshot[model_name].snapshot_id
         for model_name in [
-            "sushi.order_items",
-            "sushi.waiter_revenue_by_day",
-            "sushi.customer_revenue_by_day",
-            "sushi.customer_revenue_lifetime",
-            "sushi.top_waiters",
+            "memory.sushi.order_items",
+            "memory.sushi.waiter_revenue_by_day",
+            "memory.sushi.customer_revenue_by_day",
+            "memory.sushi.customer_revenue_lifetime",
+            "memory.sushi.top_waiters",
             "assert_item_price_above_zero",
         ]
     ]
@@ -1112,10 +1130,10 @@ def test_environment_promotion(sushi_context: Context):
 
     # Promote to prod
     def _validate_plan(context, plan):
-        sushi_items_snapshot = context._model_fqn_to_snapshot["sushi.items"]
-        sushi_top_waiters_snapshot = context._model_fqn_to_snapshot["sushi.top_waiters"]
+        sushi_items_snapshot = context._model_fqn_to_snapshot["memory.sushi.items"]
+        sushi_top_waiters_snapshot = context._model_fqn_to_snapshot["memory.sushi.top_waiters"]
         sushi_customer_revenue_by_day_snapshot = context._model_fqn_to_snapshot[
-            "sushi.customer_revenue_by_day"
+            "memory.sushi.customer_revenue_by_day"
         ]
 
         assert (
@@ -1163,10 +1181,10 @@ def test_no_override(sushi_context: Context) -> None:
     )
     plan = sushi_context.plan("prod")
 
-    sushi_items_snapshot = sushi_context._model_fqn_to_snapshot["sushi.items"]
-    sushi_order_items_snapshot = sushi_context._model_fqn_to_snapshot["sushi.order_items"]
+    sushi_items_snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.items"]
+    sushi_order_items_snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.order_items"]
     sushi_water_revenue_by_day_snapshot = sushi_context._model_fqn_to_snapshot[
-        "sushi.waiter_revenue_by_day"
+        "memory.sushi.waiter_revenue_by_day"
     ]
 
     items = plan.context_diff.snapshots[sushi_items_snapshot.snapshot_id]
@@ -1267,7 +1285,7 @@ def setup_rebase(
     )
     plan = context.plan("dev", start=start(context))
 
-    sushi_items_snapshot = context._model_fqn_to_snapshot["sushi.items"]
+    sushi_items_snapshot = context._model_fqn_to_snapshot["memory.sushi.items"]
     assert plan.categorized == [sushi_items_snapshot]
     assert list(plan.indirectly_modified) == [sushi_items_snapshot.snapshot_id]
     assert sorted(
@@ -1288,15 +1306,15 @@ def setup_rebase(
     if version_kind == "new":
         for versions in [remote_versions, local_versions]:
             assert (
-                context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"].version
+                context._model_fqn_to_snapshot["memory.sushi.waiter_revenue_by_day"].version
                 != versions["sushi.waiter_revenue_by_day"]
             )
             assert (
-                context._model_fqn_to_snapshot["sushi.top_waiters"].version
+                context._model_fqn_to_snapshot["memory.sushi.top_waiters"].version
                 != versions["sushi.top_waiters"]
             )
             assert (
-                context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"].version
+                context._model_fqn_to_snapshot["memory.sushi.customer_revenue_by_day"].version
                 != versions["sushi.customer_revenue_by_day"]
             )
     else:
@@ -1305,15 +1323,15 @@ def setup_rebase(
         else:
             versions = local_versions
         assert (
-            context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"].version
+            context._model_fqn_to_snapshot["memory.sushi.waiter_revenue_by_day"].version
             == versions["sushi.waiter_revenue_by_day"]
         )
         assert (
-            context._model_fqn_to_snapshot["sushi.top_waiters"].version
+            context._model_fqn_to_snapshot["memory.sushi.top_waiters"].version
             == versions["sushi.top_waiters"]
         )
         assert (
-            context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"].version
+            context._model_fqn_to_snapshot["memory.sushi.customer_revenue_by_day"].version
             == versions["sushi.customer_revenue_by_day"]
         )
 
@@ -1349,7 +1367,7 @@ def test_revert(
     expected: SnapshotChangeCategory,
 ):
     environment = "prod"
-    original_snapshot_id = sushi_context._model_fqn_to_snapshot["sushi.items"]
+    original_snapshot_id = sushi_context._model_fqn_to_snapshot["memory.sushi.items"]
 
     types = (DataType.Type.DOUBLE, DataType.Type.FLOAT, DataType.Type.DECIMAL)
     assert len(change_categories) < len(types)
@@ -1357,7 +1375,7 @@ def test_revert(
     for i, category in enumerate(change_categories):
         change_data_type(sushi_context, "sushi.items", *types[i : i + 2])
         apply_to_environment(sushi_context, environment, category)
-        assert sushi_context._model_fqn_to_snapshot["sushi.items"] != original_snapshot_id
+        assert sushi_context._model_fqn_to_snapshot["memory.sushi.items"] != original_snapshot_id
 
     change_data_type(sushi_context, "sushi.items", types[len(change_categories)], types[0])
 
@@ -1372,7 +1390,7 @@ def test_revert(
         change_categories[-1],
         plan_validators=[_validate_plan],
     )
-    assert sushi_context._model_fqn_to_snapshot["sushi.items"] == original_snapshot_id
+    assert sushi_context._model_fqn_to_snapshot["memory.sushi.items"] == original_snapshot_id
 
 
 @pytest.mark.integration
@@ -1413,25 +1431,28 @@ def test_auto_categorization(sushi_context: Context):
         config.auto_categorize_changes.sql = AutoCategorizationMode.FULL
     initial_add(sushi_context, environment)
 
-    version = sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].version
+    version = sushi_context._model_fqn_to_snapshot["memory.sushi.waiter_as_customer_by_day"].version
     fingerprint = sushi_context._model_fqn_to_snapshot[
-        "sushi.waiter_as_customer_by_day"
+        "memory.sushi.waiter_as_customer_by_day"
     ].fingerprint
 
-    model = t.cast(SqlModel, sushi_context.models["sushi.customers"])
+    model = t.cast(SqlModel, sushi_context.models["memory.sushi.customers"])
     sushi_context.upsert_model("sushi.customers", query=model.query.select("'foo' AS foo"))  # type: ignore
     apply_to_environment(sushi_context, environment)
 
     assert (
-        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].change_category
+        sushi_context._model_fqn_to_snapshot[
+            "memory.sushi.waiter_as_customer_by_day"
+        ].change_category
         == SnapshotChangeCategory.INDIRECT_NON_BREAKING
     )
     assert (
-        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].fingerprint
+        sushi_context._model_fqn_to_snapshot["memory.sushi.waiter_as_customer_by_day"].fingerprint
         != fingerprint
     )
     assert (
-        sushi_context._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"].version == version
+        sushi_context._model_fqn_to_snapshot["memory.sushi.waiter_as_customer_by_day"].version
+        == version
     )
 
 
@@ -1439,7 +1460,7 @@ def test_auto_categorization(sushi_context: Context):
 @pytest.mark.core_integration
 def test_multi(mocker):
     context = Context(paths=["examples/multi/repo_1", "examples/multi/repo_2"], gateway="memory")
-    context._new_state_sync().reset()
+    context._new_state_sync().reset(default_catalog=context.default_catalog)
     plan = context.plan()
     assert len(plan.new_snapshots) == 4
     context.apply(plan)
@@ -1447,7 +1468,7 @@ def test_multi(mocker):
     context = Context(
         paths=["examples/multi/repo_1"], engine_adapter=context.engine_adapter, gateway="memory"
     )
-    model = context.models["bronze.a"]
+    model = context.models["memory.bronze.a"]
     assert model.project == "repo_1"
     context.upsert_model(model.copy(update={"query": model.query.select("'c' AS c")}))
     plan = context.plan()
@@ -1484,9 +1505,11 @@ def test_incremental_time_self_reference(
         end="5 days ago",
     )
     revenue_lifeteime_snapshot = sushi_context._model_fqn_to_snapshot[
-        "sushi.customer_revenue_lifetime"
+        "memory.sushi.customer_revenue_lifetime"
     ]
-    revenue_by_day_snapshot = sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"]
+    revenue_by_day_snapshot = sushi_context._model_fqn_to_snapshot[
+        "memory.sushi.customer_revenue_by_day"
+    ]
     assert sorted(plan.missing_intervals, key=lambda x: x.snapshot_id) == sorted(
         [
             SnapshotIntervals(
@@ -1518,8 +1541,8 @@ def test_incremental_time_self_reference(
     )
     # Validate that we made 7 calls to the customer_revenue_lifetime snapshot and 1 call to the customer_revenue_by_day snapshot
     assert num_batch_calls == {
-        sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_lifetime"]: 7,
-        sushi_context._model_fqn_to_snapshot["sushi.customer_revenue_by_day"]: 1,
+        sushi_context._model_fqn_to_snapshot["memory.sushi.customer_revenue_lifetime"]: 7,
+        sushi_context._model_fqn_to_snapshot["memory.sushi.customer_revenue_by_day"]: 1,
     }
     # Validate that the results are the same as before the restate
     assert results == sushi_data_validator.validate(
@@ -1591,28 +1614,38 @@ def test_environment_suffix_target_table(mocker: MockerFixture):
 
 @pytest.mark.integration
 @pytest.mark.core_integration
-def test_ignored_snapshots(sushi_context: Context):
+@pytest.mark.parametrize(
+    "context_fixture",
+    ["sushi_context", "sushi_no_default_catalog"],
+)
+def test_ignored_snapshots(context_fixture: Context, request):
+    context = request.getfixturevalue(context_fixture)
     environment = "dev"
-    apply_to_environment(sushi_context, environment)
+    apply_to_environment(context, environment)
     # Make breaking change to model upstream of a depends_on_past model
-    sushi_context.upsert_model("sushi.order_items", stamp="1")
+    context.upsert_model("sushi.order_items", stamp="1")
     # Apply the change starting at a date later then the beginning of the downstream depends_on_past model
     plan = apply_to_environment(
-        sushi_context, environment, choice=SnapshotChangeCategory.BREAKING, plan_start="2 days ago"
+        context, environment, choice=SnapshotChangeCategory.BREAKING, plan_start="2 days ago"
     )
-    revenue_lifetime_snapshot = sushi_context._model_fqn_to_snapshot[
-        "sushi.customer_revenue_lifetime"
+    catalog_prefix = context.default_catalog + "." if context.default_catalog else ""
+    revenue_lifetime_snapshot = context._model_fqn_to_snapshot[
+        catalog_prefix + "sushi.customer_revenue_lifetime"
     ]
     # Validate that the depends_on_past model is ignored
     assert plan.ignored_snapshot_ids == {revenue_lifetime_snapshot.snapshot_id}
     # Validate that the table was really ignored
-    metadata = DuckDBMetadata.from_context(sushi_context)
+    metadata = DuckDBMetadata.from_context(context)
     # Make sure prod view exists
-    assert exp.to_table("sushi.customer_revenue_lifetime") in metadata.qualified_views
+    catalog = context.default_catalog or "memory"
+    assert exp.table_("customer_revenue_lifetime", "sushi", catalog) in metadata.qualified_views
     # Make sure dev view doesn't exist since it was ignored
-    assert exp.to_table("sushi__dev.customer_revenue_lifetime") not in metadata.qualified_views
+    assert (
+        exp.table_("customer_revenue_lifetime", "sushi__dev", catalog)
+        not in metadata.qualified_views
+    )
     # Make sure that dev view for order items was created
-    assert exp.to_table("sushi__dev.order_items") in metadata.qualified_views
+    assert exp.table_("order_items", "sushi__dev", catalog) in metadata.qualified_views
 
 
 @pytest.mark.integration
@@ -1768,6 +1801,277 @@ def test_scd_type_2(tmp_path: pathlib.Path):
         ]
     )
     compare_dataframes(df_actual, df_expected)
+
+
+@pytest.mark.integration
+@pytest.mark.core_integration
+@freeze_time("2023-11-11 00:00:00")
+def test_migration_with_default_catalog(mocker: MockerFixture):
+    """
+    Verifies the behavior of migrating to a release supporting default catalog when before it wasn't supported
+    and having that default catalog set.
+    We explicitly create a separate engine adapter for the state sync in order to make sure we can change the default
+    catalog on the non-state sync engine adapter and have that not affect the state sync engine adapter. If you don't do
+    this then when changing the default catalog it would look like there is no state out there to SQLMesh and the prod
+    plan would be against a new environment.
+    """
+    state_sync_engine_adapter = DuckDBConnectionConfig().create_engine_adapter()
+    engine_adapter = DuckDBConnectionConfig().create_engine_adapter()
+    engine_adapter.execute(f"IMPORT DATABASE 'tests/fixtures/migrations/33'")
+    state_sync_engine_adapter.execute(f"IMPORT DATABASE 'tests/fixtures/migrations/33'")
+    state_sync_engine_adapter.drop_schema("raw", cascade=True)
+    state_sync_engine_adapter.drop_schema("sushi__dev", cascade=True)
+    state_sync_engine_adapter.drop_schema("sushi", cascade=True)
+    state_sync_engine_adapter.drop_schema("sqlmesh__sushi", cascade=True)
+    engine_adapter.drop_schema("sqlmesh", cascade=True)
+    state_sync = EngineAdapterStateSync(state_sync_engine_adapter, schema="sqlmesh")
+    sushi_context = Context(
+        paths=["examples/sushi"], engine_adapter=engine_adapter, state_sync=state_sync
+    )
+    # Make sure views are not currently fully qualified
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+    )
+    with pytest.raises(SQLMeshError, match=".*Please run a migration.*"):
+        sushi_context.plan("prod")
+    sushi_context.migrate()
+    # Make sure that views are still not fully qualified after migration since we haven't run a plan against the environment yet
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+    )
+    assert (
+        sushi_context.state_sync.engine_adapter.fetchone(  # type: ignore
+            "SELECT COUNT(*) FROM sqlmesh._environments"
+        )[0]
+        == 2
+    )
+    assert (
+        sushi_context.state_sync.engine_adapter.fetchone("SELECT COUNT(*) FROM sqlmesh._snapshots")[  # type: ignore
+            0
+        ]
+        == 34
+    )
+    assert (
+        sushi_context.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+    plan = sushi_context.plan("prod", auto_apply=True)
+    assert not plan.context_diff.is_new_environment
+    assert plan.context_diff.is_unfinalized_environment
+    assert not plan.context_diff.added
+    assert not plan.context_diff.removed_snapshots
+    assert not plan.context_diff.modified_snapshots
+    assert plan.missing_intervals == []
+    assert len(plan.snapshots) == 15
+    # Standalone audit does not start with the default catalog
+    assert len([x for x in plan.snapshots if x.fqn.startswith("memory")]) == 14
+    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 67
+    assert (
+        sushi_context.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+    # Make sure views are now fully qualified
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == 'CREATE OR REPLACE VIEW "memory"."sushi"."marketing" AS SELECT * FROM "memory"."sqlmesh__sushi"."sushi__marketing__3476342839"\n;'
+    )
+
+    # Change the catalog and make sure models are recreated
+    mocker.patch(
+        "sqlmesh.core.engine_adapter.base.EngineAdapter.default_catalog",
+        PropertyMock(return_value="other_catalog"),
+    )
+    engine_adapter.execute("ATTACH ':memory:' AS other_catalog")
+    engine_adapter.set_current_catalog("other_catalog")
+    sushi_context_diff_default_catalog = Context(
+        paths=["examples/sushi"],
+        config="local_catalogs",
+        engine_adapter=engine_adapter,
+        state_sync=state_sync,
+    )
+    plan = sushi_context_diff_default_catalog.plan(
+        "prod", categorizer_config=CategorizerConfig.all_full()
+    )
+    assert not plan.context_diff.is_new_environment
+    assert not plan.context_diff.is_unfinalized_environment
+    assert plan.has_changes
+    assert not plan.context_diff.added
+    assert not plan.context_diff.removed_snapshots
+    assert len(plan.context_diff.modified_snapshots) == 15
+    # TODO: Audits are considered a metadata change since they don't have a data hash. Does that make sense?
+    assert len(plan.directly_modified) == 14
+    # Not all model kinds (like embedded or audits) have missing intervals
+    assert len(plan.missing_intervals) == 11
+    sushi_context_diff_default_catalog.apply(plan)
+    # Since this model is forward-only a new spanshot is created but it is empty.
+    # A user needs to make sure to manually migrate forward-only snapshots if they want to change catalogs.
+    assert (
+        sushi_context_diff_default_catalog.engine_adapter.fetchone(
+            "SELECT COUNT(*) FROM other_catalog.sushi.marketing"
+        )[0]
+        == 0
+    )
+    assert (
+        sushi_context_diff_default_catalog.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM other_catalog.sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.core_integration
+@freeze_time("2023-11-11 00:00:00")
+def test_migration_without_default_catalog(mocker: MockerFixture):
+    """
+    Verifies the behavior of migrating to a release supporting default catalog when before it wasn't supported
+    and not having the default catalog set.
+    We explicitly create a separate engine adapter for the state sync in order to make sure we can change the default
+    catalog on the non-state sync engine adapter and have that not affect the state sync engine adapter. If you don't do
+    this then when changing the default catalog it would look like there is no state out there to SQLMesh and the prod
+    plan would be against a new environment.
+    """
+    state_sync_engine_adapter = DuckDBConnectionConfig().create_engine_adapter()
+    engine_adapter = DuckDBConnectionConfig().create_engine_adapter()
+    engine_adapter.execute(f"IMPORT DATABASE 'tests/fixtures/migrations/33'")
+    state_sync_engine_adapter.execute(f"IMPORT DATABASE 'tests/fixtures/migrations/33'")
+    state_sync_engine_adapter.drop_schema("raw", cascade=True)
+    state_sync_engine_adapter.drop_schema("sushi__dev", cascade=True)
+    state_sync_engine_adapter.drop_schema("sushi", cascade=True)
+    state_sync_engine_adapter.drop_schema("sqlmesh__sushi", cascade=True)
+    engine_adapter.drop_schema("sqlmesh", cascade=True)
+    state_sync = EngineAdapterStateSync(state_sync_engine_adapter, schema="sqlmesh")
+    mocker.patch(
+        "sqlmesh.core.engine_adapter.base.EngineAdapter.default_catalog",
+        PropertyMock(return_value=None),
+    )
+    sushi_context = Context(
+        paths=["examples/sushi"], engine_adapter=engine_adapter, state_sync=state_sync
+    )
+    # Make sure views are not currently fully qualified
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+    )
+    with pytest.raises(SQLMeshError, match=".*Please run a migration.*"):
+        sushi_context.plan("prod")
+    sushi_context.migrate()
+    # Make sure that views are still not fully qualified after migration
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+    )
+    assert (
+        sushi_context.state_sync.engine_adapter.fetchone(  # type: ignore
+            "SELECT COUNT(*) FROM sqlmesh._environments"
+        )[0]
+        == 2
+    )
+    assert (
+        sushi_context.state_sync.engine_adapter.fetchone("SELECT COUNT(*) FROM sqlmesh._snapshots")[  # type: ignore
+            0
+        ]
+        == 34
+    )
+    assert (
+        sushi_context.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+    plan = sushi_context.plan("prod", auto_apply=True)
+    assert not plan.context_diff.is_new_environment
+    # We don't unfinalize the environments so we didn't add a default catalog
+    assert not plan.context_diff.is_unfinalized_environment
+    assert not plan.has_changes
+    assert not plan.context_diff.added
+    assert not plan.context_diff.removed_snapshots
+    assert not plan.context_diff.modified_snapshots
+    assert plan.missing_intervals == []
+    assert len(plan.snapshots) == 15
+    # Standalone audit does not start with the default catalog
+    assert (
+        len([x for x in plan.snapshots if x.fqn.startswith("sushi") or x.fqn.startswith("raw")])
+        == 14
+    )
+    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 67
+    assert (
+        sushi_context.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+    # Make sure views are not fully qualified
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+    )
+
+    # Set a default catalog and make sure that is represented
+    mocker.patch(
+        "sqlmesh.core.engine_adapter.base.EngineAdapter.default_catalog",
+        PropertyMock(return_value="other_catalog"),
+    )
+    engine_adapter.execute("ATTACH ':memory:' AS other_catalog")
+    engine_adapter.set_current_catalog("other_catalog")
+    sushi_context_diff_default_catalog = Context(
+        paths=["examples/sushi"],
+        config="local_catalogs",
+        engine_adapter=engine_adapter,
+        state_sync=state_sync,
+    )
+    plan = sushi_context_diff_default_catalog.plan(
+        "prod", categorizer_config=CategorizerConfig.all_full()
+    )
+    assert not plan.context_diff.is_new_environment
+    assert not plan.context_diff.is_unfinalized_environment
+    assert plan.has_changes
+    assert not plan.context_diff.added
+    assert not plan.context_diff.removed_snapshots
+    assert len(plan.context_diff.modified_snapshots) == 15
+    # TODO: Audits are considered a metadata change since they don't have a data hash. Does that make sense?
+    assert len(plan.directly_modified) == 14
+    # Not all model kinds (like embedded or audits) have missing intervals
+    assert len(plan.missing_intervals) == 11
+    sushi_context_diff_default_catalog.apply(plan)
+    # Since this model is forward-only a new spanshot is created but it is empty.
+    # A user needs to make sure to manually migrate forward-only snapshots if they want to change catalogs.
+    assert (
+        sushi_context_diff_default_catalog.engine_adapter.fetchone(
+            "SELECT COUNT(*) FROM other_catalog.sushi.marketing"
+        )[0]
+        == 0
+    )
+    assert (
+        sushi_context_diff_default_catalog.engine_adapter.fetchone(
+            "SELECT COUNT(DISTINCT ds) FROM other_catalog.sushi.customer_revenue_by_day"
+        )[0]
+        == 7
+    )
+    assert (
+        engine_adapter.fetchone(
+            "SELECT sql FROM duckdb_views() WHERE database_name = 'other_catalog' AND schema_name = 'sushi' AND view_name = 'marketing'"
+        )[0]
+        == 'CREATE OR REPLACE VIEW "other_catalog"."sushi"."marketing" AS SELECT * FROM "other_catalog"."sqlmesh__sushi"."sushi__marketing__3476342839"\n;'
+    )
 
 
 def initial_add(context: Context, environment: str):

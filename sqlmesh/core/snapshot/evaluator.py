@@ -170,7 +170,12 @@ class SnapshotEvaluator:
                 self.adapter.execute(model.render_pre_statements(**render_statements_kwargs))
 
             queries_or_dfs = model.render(
-                context=ExecutionContext(self.adapter, snapshots, deployability_index),
+                context=ExecutionContext(
+                    self.adapter,
+                    snapshots,
+                    deployability_index,
+                    default_catalog=model.default_catalog,
+                ),
                 **common_render_kwargs,
             )
 

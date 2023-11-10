@@ -133,7 +133,9 @@ def get_plan_tracker(
                         model_name=interval.snapshot_id.name,
                         view_name=plan.context_diff.snapshots[
                             interval.snapshot_id
-                        ].qualified_view_name.for_environment(plan.environment.naming_info)
+                        ].model_name_as_qualified_view_name.for_environment(
+                            plan.environment.naming_info
+                        )
                         if interval.snapshot_id in plan.context_diff.snapshots
                         else interval.snapshot_id,
                         interval=[

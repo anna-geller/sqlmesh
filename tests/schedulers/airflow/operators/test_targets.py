@@ -49,7 +49,7 @@ def test_evaluation_target_execute(mocker: MockerFixture, make_snapshot: t.Calla
 
     snapshot = make_snapshot(model)
     snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
-    parent_snapshots = {snapshot.name: snapshot}
+    parent_snapshots = [snapshot]
 
     deployability_index = DeployabilityIndex.all_deployable()
 
@@ -111,7 +111,7 @@ def test_evaluation_target_execute_seed_model(mocker: MockerFixture, make_snapsh
     deployability_index = DeployabilityIndex.all_deployable()
 
     target = targets.SnapshotEvaluationTarget(
-        snapshot=snapshot, parent_snapshots={}, deployability_index=deployability_index
+        snapshot=snapshot, parent_snapshots=[], deployability_index=deployability_index
     )
     target.execute(context, lambda: mocker.Mock(), "spark")
 
@@ -124,7 +124,7 @@ def test_evaluation_target_execute_seed_model(mocker: MockerFixture, make_snapsh
         interval_ds,
         interval_ds,
         logical_ds,
-        snapshots={snapshot.name: snapshot},
+        snapshots=[snapshot],
         deployability_index=deployability_index,
     )
 

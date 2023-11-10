@@ -89,7 +89,9 @@ class ApiConsole(TerminalConsole):
                     completed=0,
                     total=total_tasks,
                     start=now_timestamp(),
-                    view_name=snapshot.qualified_view_name.for_environment(environment_naming_info),
+                    view_name=snapshot.model_name_as_qualified_view_name.for_environment(
+                        environment_naming_info
+                    ),
                 )
                 for snapshot, total_tasks in batches.items()
             }

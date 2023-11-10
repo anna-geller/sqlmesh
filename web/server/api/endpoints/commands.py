@@ -8,6 +8,7 @@ import pandas as pd
 from fastapi import APIRouter, Body, Depends, Request
 
 from sqlmesh.core.context import Context
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.snapshot.definition import SnapshotChangeCategory
 from sqlmesh.core.test import ModelTest
 from sqlmesh.utils.errors import PlanError
@@ -118,7 +119,10 @@ async def render(
     context: Context = Depends(get_loaded_context),
 ) -> models.Query:
     """Renders a model's query, optionally expanding referenced models"""
-    snapshot = context._model_fqn_to_snapshot.get(options.model)
+    model_name = normalize_model_name(
+        options.model, context.default_catalog, context.config.dialect
+    )
+    snapshot = context._model_fqn_to_snapshot.get(model_name)
 
     if not snapshot:
         raise ApiException(
@@ -158,6 +162,9 @@ async def test(
             tests=[str(context.path / test)] if test else None, verbose=verbose, stream=test_output
         )
     except Exception:
+        import traceback
+
+        traceback.print_exc()
         raise ApiException(
             message="Unable to run tests",
             origin="API -> commands -> test",

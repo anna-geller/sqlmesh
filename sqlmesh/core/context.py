@@ -142,6 +142,10 @@ class BaseContext(abc.ABC):
         """Returns the spark session if it exists."""
         return self.engine_adapter.spark
 
+    @property
+    def default_catalog(self) -> t.Optional[str]:
+        raise NotImplementedError
+
     def table(self, model_name: str) -> str:
         """Gets the physical table name for a given model.
 
@@ -152,7 +156,7 @@ class BaseContext(abc.ABC):
             The physical table name.
         """
         model_name = normalize_model_name(
-            model_name, self.engine_adapter.default_catalog, self.engine_adapter.dialect
+            model_name, self.default_catalog, self.engine_adapter.dialect
         )
         return self._model_tables[model_name]
 
@@ -199,11 +203,13 @@ class ExecutionContext(BaseContext):
         engine_adapter: EngineAdapter,
         snapshots: t.Iterable[Snapshot],
         deployability_index: t.Optional[DeployabilityIndex],
+        default_catalog: t.Optional[str] = None,
     ):
         self.snapshots = snapshots
         self.deployability_index = deployability_index
         self._engine_adapter = engine_adapter
         self.__model_tables = to_table_mapping(snapshots, deployability_index)
+        self._default_catalog = default_catalog
 
     @property
     def engine_adapter(self) -> EngineAdapter:
@@ -214,6 +220,10 @@ class ExecutionContext(BaseContext):
     def _model_tables(self) -> t.Dict[str, str]:
         """Returns a mapping of model names to tables."""
         return self.__model_tables
+
+    @property
+    def default_catalog(self) -> t.Optional[str]:
+        return self._default_catalog
 
 
 class Context(BaseContext):
@@ -281,7 +291,6 @@ class Context(BaseContext):
         connection_config = self.config.get_connection(self.gateway)
         self.concurrent_tasks = concurrent_tasks or connection_config.concurrent_tasks
         self._engine_adapter = engine_adapter or connection_config.create_engine_adapter()
-        self.default_catalog = connection_config.get_catalog()
 
         test_connection_config = self.config.get_test_connection(self.gateway)
         self._test_engine_adapter = test_connection_config.create_engine_adapter()
@@ -325,6 +334,7 @@ class Context(BaseContext):
             engine_adapter=self._engine_adapter,
             snapshots=self.snapshots,
             deployability_index=deployability_index,
+            default_catalog=self.default_catalog,
         )
 
     def upsert_model(self, model: t.Union[str, Model], **kwargs: t.Any) -> Model:
@@ -396,7 +406,7 @@ class Context(BaseContext):
             self._state_sync = self._new_state_sync()
 
             if self._state_sync.get_versions(validate=False).schema_version == 0:
-                self._state_sync.migrate()
+                self._state_sync.migrate(default_catalog=self.default_catalog)
             self._state_sync.get_versions()
             self._state_sync = CachingStateSync(self._state_sync)  # type: ignore
         return self._state_sync
@@ -668,6 +678,10 @@ class Context(BaseContext):
     def _model_fqn_to_snapshot(self) -> t.Dict[str, Snapshot]:
         return {s.fqn: s for s in self.snapshots}
 
+    @property
+    def default_catalog(self) -> t.Optional[str]:
+        return self._scheduler.get_default_catalog(self)
+
     def render(
         self,
         model_or_snapshot: ModelOrSnapshot,
@@ -696,7 +710,7 @@ class Context(BaseContext):
 
         model = self.get_model(model_or_snapshot, raise_if_missing=True)
 
-        expand = self.dag.upstream(model.name) if expand is True else expand or []
+        expand = self.dag.upstream(model.fqn) if expand is True else expand or []
 
         if model.is_seed:
             df = next(
@@ -868,6 +882,7 @@ class Context(BaseContext):
             self._models,
             context_path=self.path,
             default_catalog=self.default_catalog,
+            dialect=self.config.dialect,
         )
 
         model_override: UniqueKeyDict[str, Model] = UniqueKeyDict("models")
@@ -1081,10 +1096,10 @@ class Context(BaseContext):
 
         graph = graphviz.Digraph(node_attr={"shape": "box"}, format=format)
 
-        for name, upstream in self.dag.graph.items():
-            graph.node(name)
+        for fqn, upstream in self.dag.graph.items():
+            graph.node(fqn)
             for u in upstream:
-                graph.edge(u, name)
+                graph.edge(u, fqn)
         return graph
 
     def render_dag(self, path: str, format: str = "jpeg") -> str:
@@ -1128,6 +1143,7 @@ class Context(BaseContext):
                     dialect=self.config.dialect,
                     verbosity=verbosity,
                     patterns=match_patterns,
+                    default_catalog=self.default_catalog,
                 )
             else:
                 test_meta = []
@@ -1243,7 +1259,7 @@ class Context(BaseContext):
 
         Please contact your SQLMesh administrator before doing this.
         """
-        self._new_state_sync().migrate()
+        self._new_state_sync().migrate(default_catalog=self.default_catalog)
 
     def rollback(self) -> None:
         """Rolls back SQLMesh to the previous migration.

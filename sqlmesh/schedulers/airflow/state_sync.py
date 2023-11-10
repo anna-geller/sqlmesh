@@ -109,20 +109,19 @@ class HttpStateSync(StateSync):
             return set()
         return self._client.snapshots_exist([s.snapshot_id for s in snapshot_ids])
 
-    def get_snapshots_by_name(
-        self, names: t.Iterable[str], exclude_external: bool = False
-    ) -> t.Set[Snapshot]:
-        """Returns the node names that exist in the state sync.
+    def fqns_exist(
+        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
+    ) -> t.Set[str]:
+        """Returns the fqn names that exist in the state sync.
 
         Args:
-            names: Iterable of node names to check.
+            fqns: Iterable of full qualified names to check.
             exclude_external: Whether to exclude external models from the output.
 
         Returns:
-            A set of all the existing node names.
+            A set of all the existing full qualified names.
         """
-        # TODO: Update this
-        return self._client.nodes_exist(names, exclude_external=exclude_external)  # type: ignore
+        return self._client.fqns_exist(fqns, exclude_external=exclude_external)
 
     def _get_versions(self, lock_for_update: bool = False) -> Versions:
         """Queries the store to get the migration.
@@ -301,7 +300,7 @@ class HttpStateSync(StateSync):
             "Compacting intervals is not supported by the Airflow state sync."
         )
 
-    def migrate(self, skip_backup: bool = False) -> None:
+    def migrate(self, default_catalog: t.Optional[str], skip_backup: bool = False) -> None:
         """Migrate the state sync to the latest SQLMesh / SQLGlot version."""
         raise NotImplementedError("Migration is not supported by the Airflow state sync.")
 

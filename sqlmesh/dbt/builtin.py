@@ -338,6 +338,7 @@ def create_builtin_globals(
             snapshots=jinja_globals.get("snapshots", set()),
             table_mapping=jinja_globals.get("table_mapping", {}),
             deployability_index=jinja_globals.get("deployability_index"),
+            default_catalog=jinja_globals.get("default_catalog"),
         )
     else:
         builtin_globals["flags"] = Flags(which="parse")

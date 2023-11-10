@@ -1302,7 +1302,8 @@ def test_multi_interval_merge(make_snapshot):
 
 def test_earliest_start_date(sushi_context: Context):
     model_name = "sushi.waiter_names"
-    assert sushi_context._model_fqn_to_snapshot[model_name].node.start is None
+    model_fqn = f"memory.{model_name}"
+    assert sushi_context._model_fqn_to_snapshot[model_fqn].node.start is None
 
     cache: t.Dict[str, datetime] = {}
     earliest_start_date(sushi_context.snapshots, cache)

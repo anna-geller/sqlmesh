@@ -112,6 +112,7 @@ class BaseExpressionRenderer:
                 snapshots=(snapshots or {}),
                 table_mapping=table_mapping,
                 deployability_index=deployability_index,
+                default_catalog=self._default_catalog,
             )
 
             if isinstance(self._expression, d.Jinja):
@@ -440,7 +441,9 @@ class QueryRenderer(BaseExpressionRenderer):
         original = query
         failure = False
         missing_deps = set()
-        all_deps = d.find_tables(query, default_catalog=self._default_catalog, dialect=self._dialect) - {self._model_name, self._model_fqn}
+        all_deps = d.find_tables(
+            query, default_catalog=self._default_catalog, dialect=self._dialect
+        ) - {self._model_name, self._model_fqn}
         should_optimize = not schema.empty or not all_deps
 
         for dep in all_deps:
@@ -460,7 +463,15 @@ class QueryRenderer(BaseExpressionRenderer):
         try:
             if should_optimize:
                 query = query.copy()
-                simplify(qualify(query, dialect=self._dialect, schema=schema, infer_schema=False, catalog=self._default_catalog))
+                simplify(
+                    qualify(
+                        query,
+                        dialect=self._dialect,
+                        schema=schema,
+                        infer_schema=False,
+                        catalog=self._default_catalog,
+                    )
+                )
         except SqlglotError as ex:
             failure = True
             logger.error(

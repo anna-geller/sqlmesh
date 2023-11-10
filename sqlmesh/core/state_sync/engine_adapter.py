@@ -287,30 +287,41 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
             )
         }
 
-    def get_snapshots_by_name(
-        self, names: t.Iterable[str], exclude_external: bool = False
-    ) -> t.Set[Snapshot]:
-        names = set(names)
+    def fqns_exist(
+        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
+    ) -> t.Set[str]:
+        fqns = set(fqns)
 
-        if not names:
-            return set()
+        possible_names = set()
+        if not fqns:
+            return fqns
+        for fqn in fqns:
+            possible_names.add(fqn)
+            fqn_table = exp.to_table(fqn, dialect=dialect)
+            if fqn_table.catalog is None:
+                fqn_table.set("catalog", None)
+                possible_names.add(fqn_table.sql(dialect=dialect))
 
         query = (
-            exp.select("name")
+            exp.select("snapshot")
             .from_(self.snapshots_table)
-            .where(exp.column("name").isin(*names))
-            .distinct()
+            .where(exp.column("name").isin(*possible_names))
         )
         if exclude_external:
             query = query.where(exp.column("kind_name").neq(ModelKindName.EXTERNAL.value))
-        return {name for name, in self.engine_adapter.fetchall(query, quote_identifiers=True)}
+        existing_fqns = set()
+        for row in self.engine_adapter.fetchall(query, quote_identifiers=True):
+            snapshot = Snapshot.parse_raw(row[0])
+            if snapshot.fqn in possible_names:
+                existing_fqns.add(snapshot.fqn)
+        return existing_fqns
 
-    def reset(self) -> None:
+    def reset(self, default_catalog: t.Optional[str]) -> None:
         """Resets the state store to the state when it was first initialized."""
         self.engine_adapter.drop_table(self.snapshots_table)
         self.engine_adapter.drop_table(self.environments_table)
         self.engine_adapter.drop_table(self.versions_table)
-        self.migrate()
+        self.migrate(default_catalog)
 
     def _update_environment(self, environment: Environment) -> None:
         self.engine_adapter.delete_from(
@@ -757,7 +768,7 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
         )
 
     @transactional()
-    def migrate(self, skip_backup: bool = False) -> None:
+    def migrate(self, default_catalog: t.Optional[str], skip_backup: bool = False) -> None:
         """Migrate the state sync to the latest SQLMesh / SQLGlot version."""
         versions = self.get_versions(validate=False)
         migrations = MIGRATIONS[versions.schema_version :]
@@ -771,7 +782,7 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
         try:
             for migration in migrations:
                 logger.info(f"Applying migration {migration}")
-                migration.migrate(self)
+                migration.migrate(self, default_catalog=default_catalog)
 
             self._migrate_rows()
             self._update_versions()
@@ -861,7 +872,7 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
                     continue
 
                 queue.update(s.parents)
-                nodes[s.name] = s.node
+                nodes[s.fqn] = s.node
                 for audit in s.audits:
                     audits[audit.name] = audit
 
@@ -877,15 +888,15 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
                 )
                 new_snapshot.parents = tuple(
                     SnapshotId(
-                        name=name,
+                        name=nodes[fqn].name,
                         identifier=fingerprint_from_node(
-                            nodes[name],
+                            nodes[fqn],
                             nodes=nodes,
                             audits=audits,
                             cache=fingerprint_cache,
                         ).to_identifier(),
                     )
-                    for name in _parents_from_node(node, nodes)
+                    for fqn in _parents_from_node(node, nodes)
                 )
             except Exception:
                 logger.exception("Could not compute fingerprint for %s", snapshot.snapshot_id)

@@ -222,6 +222,20 @@ class SnapshotInfoMixin(ModelKindMixin):
         )
 
     @property
+    def model_name_as_qualified_view_name(self) -> QualifiedViewName:
+        """
+        Returns the model name as a qualified view name.
+        This is just used for presenting information back to the user and `qualified_view_name` should be used
+        when wanting a view name in all other cases.
+        """
+        view_name = exp.to_table(self.name)
+        return QualifiedViewName(
+            catalog=view_name.catalog or None,
+            schema_name=view_name.db or None,
+            table=view_name.name,
+        )
+
+    @property
     def previous_version(self) -> t.Optional[SnapshotDataVersion]:
         """Helper method to get the previous data version."""
         if self.previous_versions:
@@ -527,15 +541,15 @@ class Snapshot(PydanticModel, SnapshotInfoMixin):
             node=node,
             parents=tuple(
                 SnapshotId(
-                    name=nodes[name].name,
+                    name=nodes[fqn].name,
                     identifier=fingerprint_from_node(
-                        nodes[name],
+                        nodes[fqn],
                         nodes=nodes,
                         audits=audits,
                         cache=cache,
                     ).to_identifier(),
                 )
-                for name in _parents_from_node(node, nodes)
+                for fqn in _parents_from_node(node, nodes)
             ),
             intervals=[],
             dev_intervals=[],
@@ -1244,7 +1258,7 @@ def fingerprint_from_node(
     """
     cache = {} if cache is None else cache
 
-    if node.name not in cache:
+    if node.fqn not in cache:
         parents = [
             fingerprint_from_node(
                 nodes[table],
@@ -1262,14 +1276,14 @@ def fingerprint_from_node(
             sorted(h for p in parents for h in (p.metadata_hash, p.parent_metadata_hash))
         )
 
-        cache[node.name] = SnapshotFingerprint(
+        cache[node.fqn] = SnapshotFingerprint(
             data_hash=node.data_hash,
             metadata_hash=node.metadata_hash(audits or {}),
             parent_data_hash=parent_data_hash,
             parent_metadata_hash=parent_metadata_hash,
         )
 
-    return cache[node.name]
+    return cache[node.fqn]
 
 
 def _parents_from_node(

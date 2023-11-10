@@ -121,13 +121,10 @@ def get_snapshots() -> Response:
 @check_authentication
 def nodes_exist() -> Response:
     with util.scoped_state_sync() as state_sync:
-        # TODO: Are these FQN or just names? If FQN then we need to also check non-fqn name and check for match
         names = _csv_arg("names")
         exclude_external = "exclude_external" in request.args
-        existing_snapshots = state_sync.get_snapshots_by_name(
-            names, exclude_external=exclude_external
-        )
-        return _success(common.ExistingModelsResponse(names=[s.name for s in existing_snapshots]))
+        existing_models = state_sync.fqns_exist(names, exclude_external=exclude_external)
+        return _success(common.ExistingModelsResponse(names=list(existing_models)))
 
 
 @sqlmesh_api_v1.route("/versions")

@@ -10,6 +10,7 @@ from sqlglot import exp
 from watchfiles import Change
 
 from sqlmesh.core.context_diff import ContextDiff
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.environment import Environment
 from sqlmesh.core.node import IntervalUnit
 from sqlmesh.core.snapshot.definition import SnapshotChangeCategory, SnapshotId
@@ -239,6 +240,11 @@ class Model(BaseModel):
     description: t.Optional[str] = None
     details: t.Optional[ModelDetails] = None
     sql: t.Optional[str] = None
+    default_catalog: t.Optional[str] = None
+
+    @property
+    def fqn(self) -> str:
+        return normalize_model_name(self.name, self.default_catalog, self.dialect)
 
 
 class RenderInput(BaseModel):

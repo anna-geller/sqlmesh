@@ -4,6 +4,7 @@ import fnmatch
 import typing as t
 from pathlib import Path
 
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.core.environment import Environment
 from sqlmesh.core.loader import update_model_schemas
 from sqlmesh.core.model import Model
@@ -21,11 +22,13 @@ class Selector:
         context_path: Path = Path("."),
         dag: t.Optional[DAG[str]] = None,
         default_catalog: t.Optional[str] = None,
+        dialect: t.Optional[str] = None,
     ):
         self._state_reader = state_reader
         self._models = models
         self._context_path = context_path
         self._default_catalog = default_catalog
+        self._dialect = dialect
 
         if dag is None:
             self._dag: DAG[str] = DAG()
@@ -63,7 +66,7 @@ class Selector:
             )
 
         env_models = {
-            s.name: s.model
+            s.fqn: s.model
             for s in self._state_reader.get_snapshots(
                 target_env.snapshots, hydrate_seeds=True
             ).values()
@@ -126,10 +129,11 @@ class Selector:
                 include_downstream = True
 
             if "*" in selection:
-                for name in self._models:
-                    if fnmatch.fnmatch(name, selection):
-                        _add_model(name, include_upstream, include_downstream)
+                for model in self._models.values():
+                    if fnmatch.fnmatch(model.name, selection):
+                        _add_model(model.fqn, include_upstream, include_downstream)
             else:
-                _add_model(selection, include_upstream, include_downstream)
+                model_fqn = normalize_model_name(selection, self._default_catalog, self._dialect)
+                _add_model(model_fqn, include_upstream, include_downstream)
 
         return result

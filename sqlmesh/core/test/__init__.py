@@ -60,6 +60,7 @@ def run_model_tests(
     verbosity: int = 1,
     patterns: list[str] | None = None,
     stream: t.TextIO | None = None,
+    default_catalog: t.Optional[str] = None,
 ) -> unittest.result.TestResult:
     """Load and run tests.
 
@@ -83,4 +84,12 @@ def run_model_tests(
     if patterns:
         loaded_tests = filter_tests_by_patterns(loaded_tests, patterns)
 
-    return run_tests(loaded_tests, models, engine_adapter, dialect, verbosity, stream)
+    return run_tests(
+        loaded_tests,
+        models,
+        engine_adapter,
+        dialect,
+        verbosity,
+        stream,
+        default_catalog=default_catalog,
+    )

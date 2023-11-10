@@ -23,11 +23,13 @@ def scheduler(sushi_context_fixed_date: Context) -> Scheduler:
 
 @pytest.fixture
 def orders(sushi_context_fixed_date: Context) -> Snapshot:
-    return sushi_context_fixed_date._model_fqn_to_snapshot["sushi.orders"]
+    return sushi_context_fixed_date._model_fqn_to_snapshot["memory.sushi.orders"]
 
 
 def test_interval_params(scheduler: Scheduler, sushi_context_fixed_date: Context, orders: Snapshot):
-    waiter_revenue = sushi_context_fixed_date._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
+    waiter_revenue = sushi_context_fixed_date._model_fqn_to_snapshot[
+        "memory.sushi.waiter_revenue_by_day"
+    ]
     start_ds = "2022-01-01"
     end_ds = "2022-02-05"
 
@@ -60,7 +62,9 @@ def test_interval_params_nonconsecutive(scheduler: Scheduler, orders: Snapshot):
 
 
 def test_interval_params_missing(scheduler: Scheduler, sushi_context_fixed_date: Context):
-    waiters = sushi_context_fixed_date._model_fqn_to_snapshot["sushi.waiter_as_customer_by_day"]
+    waiters = sushi_context_fixed_date._model_fqn_to_snapshot[
+        "memory.sushi.waiter_as_customer_by_day"
+    ]
 
     start_ds = "2022-01-01"
     end_ds = "2022-03-01"
@@ -73,7 +77,7 @@ def test_interval_params_missing(scheduler: Scheduler, sushi_context_fixed_date:
 
 def test_run(sushi_context_fixed_date: Context, scheduler: Scheduler):
     adapter = sushi_context_fixed_date.engine_adapter
-    snapshot = sushi_context_fixed_date._model_fqn_to_snapshot["sushi.items"]
+    snapshot = sushi_context_fixed_date._model_fqn_to_snapshot["memory.sushi.items"]
     scheduler.run(
         EnvironmentNamingInfo(),
         "2022-01-01",

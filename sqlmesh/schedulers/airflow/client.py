@@ -216,11 +216,13 @@ class AirflowClient(BaseAirflowClient):
             ).snapshot_ids
         )
 
-    def nodes_exist(self, names: t.Iterable[str], exclude_external: bool = False) -> t.Set[str]:
+    def fqns_exist(
+        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
+    ) -> t.Set[str]:
         flags = ["exclude_external"] if exclude_external else []
         return set(
             common.ExistingModelsResponse.parse_obj(
-                self._get(MODELS_PATH, *flags, names=",".join(names))
+                self._get(MODELS_PATH, *flags, names=",".join(fqns))
             ).names
         )
 

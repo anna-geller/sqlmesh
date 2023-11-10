@@ -32,7 +32,7 @@ class CommandType(str, Enum):
 
 class EvaluateCommandPayload(PydanticModel):
     snapshot: Snapshot
-    parent_snapshots: t.Dict[str, Snapshot]
+    parent_snapshots: t.List[Snapshot]
     start: TimeLike
     end: TimeLike
     execution_time: TimeLike
@@ -72,15 +72,17 @@ def evaluate(
     if isinstance(command_payload, str):
         command_payload = EvaluateCommandPayload.parse_raw(command_payload)
 
-    parent_snapshots = command_payload.parent_snapshots
-    parent_snapshots[command_payload.snapshot.name] = command_payload.snapshot
+    parent_snapshots = {
+        snapshot.snapshot_id: snapshot for snapshot in command_payload.parent_snapshots
+    }
+    parent_snapshots[command_payload.snapshot.snapshot_id] = command_payload.snapshot
 
     evaluator.evaluate(
         command_payload.snapshot,
         command_payload.start,
         command_payload.end,
         command_payload.execution_time,
-        snapshots=parent_snapshots,
+        snapshots=list(parent_snapshots.values()),
         deployability_index=command_payload.deployability_index,
     )
     evaluator.audit(
@@ -88,7 +90,7 @@ def evaluate(
         start=command_payload.start,
         end=command_payload.end,
         execution_time=command_payload.execution_time,
-        snapshots=parent_snapshots,
+        snapshots=list(parent_snapshots.values()),
         deployability_index=command_payload.deployability_index,
     )
 
@@ -136,7 +138,9 @@ def create_tables(
     snapshots_by_id = {s.snapshot_id: s for s in command_payload.snapshots}
     target_snapshots = [snapshots_by_id[sid] for sid in command_payload.target_snapshot_ids]
     evaluator.create(
-        target_snapshots, snapshots_by_id, deployability_index=command_payload.deployability_index
+        target_snapshots,
+        snapshots_by_id.values(),
+        deployability_index=command_payload.deployability_index,
     )
 
 
@@ -148,7 +152,7 @@ def migrate_tables(
         command_payload = MigrateTablesCommandPayload.parse_raw(command_payload)
     snapshots_by_id = {s.snapshot_id: s for s in command_payload.snapshots}
     target_snapshots = [snapshots_by_id[sid] for sid in command_payload.target_snapshot_ids]
-    evaluator.migrate(target_snapshots, snapshots_by_id)
+    evaluator.migrate(target_snapshots, snapshots_by_id.values())
 
 
 COMMAND_HANDLERS: t.Dict[CommandType, t.Callable[[SnapshotEvaluator, str], None]] = {

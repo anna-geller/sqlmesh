@@ -272,7 +272,7 @@ class TerminalConsole(Console):
 
     def start_snapshot_evaluation_progress(self, snapshot: Snapshot) -> None:
         if self.evaluation_model_progress and snapshot.name not in self.evaluation_model_tasks:
-            view_name = snapshot.qualified_view_name.for_environment(
+            view_name = snapshot.model_name_as_qualified_view_name.for_environment(
                 self.evaluation_environment_naming_info
             )
             self.evaluation_model_tasks[snapshot.name] = self.evaluation_model_progress.add_task(
@@ -552,9 +552,7 @@ class TerminalConsole(Console):
                     direct.add(
                         f"[direct]{s_id.name}"
                         if no_diff
-                        else Syntax(
-                            f"{s_id.name}\n{context_diff.text_diff(s_id)}", "sql"
-                        )
+                        else Syntax(f"{s_id.name}\n{context_diff.text_diff(s_id)}", "sql")
                     )
                 elif context_diff.indirectly_modified(s_id):
                     indirect.add(f"[indirect]{s_id.name}")
@@ -635,7 +633,9 @@ class TerminalConsole(Console):
             snapshot = plan.context_diff.snapshots[missing.snapshot_id]
             if not snapshot.is_model:
                 continue
-            view_name = snapshot.qualified_view_name.for_environment(plan.environment_naming_info)
+            view_name = snapshot.model_name_as_qualified_view_name.for_environment(
+                plan.environment_naming_info
+            )
             backfill.add(f"{view_name}: {missing.format_intervals(snapshot.node.interval_unit)}")
         self._print(backfill)
 
@@ -1265,7 +1265,9 @@ class MarkdownConsole(CaptureTerminalConsole):
         self._print("**Models needing backfill (missing dates):**\n\n")
         for missing in plan.missing_intervals:
             snapshot = plan.context_diff.snapshots[missing.snapshot_id]
-            view_name = snapshot.qualified_view_name.for_environment(plan.environment_naming_info)
+            view_name = snapshot.model_name_as_qualified_view_name.for_environment(
+                plan.environment_naming_info
+            )
             self._print(
                 f"* `{view_name}`: {missing.format_intervals(snapshot.node.interval_unit)}\n"
             )
@@ -1350,7 +1352,7 @@ class DatabricksMagicConsole(CaptureTerminalConsole):
 
     def start_snapshot_evaluation_progress(self, snapshot: Snapshot) -> None:
         if not self.evaluation_batch_progress.get(snapshot.snapshot_id):
-            view_name = snapshot.qualified_view_name.for_environment(
+            view_name = snapshot.model_name_as_qualified_view_name.for_environment(
                 self.evaluation_environment_naming_info
             )
             self.evaluation_batch_progress[snapshot.snapshot_id] = (view_name, 0)

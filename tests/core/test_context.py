@@ -2,7 +2,7 @@ import logging
 import pathlib
 from datetime import date, timedelta
 from tempfile import TemporaryDirectory
-from unittest.mock import call, patch
+from unittest.mock import PropertyMock, call, patch
 
 import pytest
 from pytest_mock.plugin import MockerFixture
@@ -12,7 +12,7 @@ from sqlglot.errors import SchemaError
 import sqlmesh.core.constants
 from sqlmesh.core.config import (
     Config,
-    DatabricksConnectionConfig,
+    DuckDBConnectionConfig,
     EnvironmentSuffixTarget,
     ModelDefaultsConfig,
     SnowflakeConnectionConfig,
@@ -71,15 +71,15 @@ def test_custom_macros(sushi_context):
 
 
 def test_dag(sushi_context):
-    assert set(sushi_context.dag.upstream("sushi.customer_revenue_by_day")) == {
-        "sushi.items",
-        "sushi.orders",
-        "sushi.order_items",
+    assert set(sushi_context.dag.upstream("memory.sushi.customer_revenue_by_day")) == {
+        "memory.sushi.items",
+        "memory.sushi.orders",
+        "memory.sushi.order_items",
     }
 
 
 def test_render(sushi_context, assert_exp_eq):
-    snapshot = sushi_context._model_fqn_to_snapshot["sushi.waiter_revenue_by_day"]
+    snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.waiter_revenue_by_day"]
 
     assert_exp_eq(
         sushi_context.render(
@@ -262,7 +262,7 @@ def test():
     )
     context = Context(paths=str(tmp_path), config=config)
 
-    assert ["db.actual_test"] == list(context.models)
+    assert ["memory.db.actual_test"] == list(context.models)
     assert "test" in context._macros
 
 
@@ -389,8 +389,14 @@ def test_janitor(sushi_context, mocker: MockerFixture) -> None:
     # Assert that the schemas are dropped just twice for the schema based environment
     adapter_mock.drop_schema.assert_has_calls(
         [
-            call(schema_("raw__test_environment"), cascade=True, ignore_if_not_exists=True),
-            call(schema_("sushi__test_environment"), cascade=True, ignore_if_not_exists=True),
+            call(
+                schema_("raw__test_environment", "memory"), cascade=True, ignore_if_not_exists=True
+            ),
+            call(
+                schema_("sushi__test_environment", "memory"),
+                cascade=True,
+                ignore_if_not_exists=True,
+            ),
         ],
         any_order=True,
     )
@@ -400,8 +406,11 @@ def test_janitor(sushi_context, mocker: MockerFixture) -> None:
     assert adapter_mock.drop_view.call_count == 14
     adapter_mock.drop_view.assert_has_calls(
         [
-            call("raw.demographics__test_environment", ignore_if_not_exists=True),
-            call("sushi.waiter_as_customer_by_day__test_environment", ignore_if_not_exists=True),
+            call("memory.raw.demographics__test_environment", ignore_if_not_exists=True),
+            call(
+                "memory.sushi.waiter_as_customer_by_day__test_environment",
+                ignore_if_not_exists=True,
+            ),
         ],
         any_order=True,
     )
@@ -442,8 +451,8 @@ def test_schema_error_no_default(sushi_context_pre_scheduling) -> None:
         )
 
 
-def test_default_catalog(sushi_context_pre_scheduling) -> None:
-    context = sushi_context_pre_scheduling
+def test_default_catalog(sushi_context_pre_scheduling_no_default_catalog) -> None:
+    context = sushi_context_pre_scheduling_no_default_catalog
 
     c = load_sql_based_model(
         parse(
@@ -472,6 +481,7 @@ def test_gateway_macro(sushi_context: Context) -> None:
             """
             ),
             macros=sushi_context._macros,
+            default_catalog=sushi_context.default_catalog,
         )
     )
 
@@ -491,6 +501,7 @@ def test_gateway_macro(sushi_context: Context) -> None:
             """
             ),
             jinja_macros=sushi_context._jinja_macros,
+            default_catalog=sushi_context.default_catalog,
         )
     )
 
@@ -507,7 +518,8 @@ def test_unrestorable_snapshot(sushi_context: Context) -> None:
         MODEL(name sushi.test_unrestorable);
         SELECT 1 AS one;
         """
-        )
+        ),
+        default_catalog=sushi_context.default_catalog,
     )
     model_v2 = load_sql_based_model(
         parse(
@@ -515,19 +527,20 @@ def test_unrestorable_snapshot(sushi_context: Context) -> None:
         MODEL(name sushi.test_unrestorable);
         SELECT 2 AS two;
         """
-        )
+        ),
+        default_catalog=sushi_context.default_catalog,
     )
 
     sushi_context.upsert_model(model_v1)
     sushi_context.plan(auto_apply=True, no_prompts=True)
-    model_v1_old_snapshot = sushi_context._model_fqn_to_snapshot["sushi.test_unrestorable"]
+    model_v1_old_snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.test_unrestorable"]
 
     sushi_context.upsert_model(model_v2)
     sushi_context.plan(auto_apply=True, no_prompts=True, forward_only=True)
 
     sushi_context.upsert_model(model_v1)
     sushi_context.plan(auto_apply=True, no_prompts=True, forward_only=True)
-    model_v1_new_snapshot = sushi_context._model_fqn_to_snapshot["sushi.test_unrestorable"]
+    model_v1_new_snapshot = sushi_context._model_fqn_to_snapshot["memory.sushi.test_unrestorable"]
 
     assert (
         model_v1_new_snapshot.node.stamp
@@ -537,36 +550,18 @@ def test_unrestorable_snapshot(sushi_context: Context) -> None:
     assert model_v1_old_snapshot.fingerprint != model_v1_new_snapshot.fingerprint
 
 
-def test_default_catalog_connections():
-    context = Context(paths="examples/sushi")
-    assert context.default_catalog is None
-
-    # Verify that not providing catalog does not result in a default catalog
-    config = Config(
-        model_defaults=ModelDefaultsConfig(dialect="presto"),
-        default_connection=DatabricksConnectionConfig(
-            server_hostname="test", http_path="test", access_token="test"
-        ),
-    )
-    context = Context(paths="examples/sushi", config=config)
-    assert context.default_catalog is None
+def test_default_catalog_connections(mocker: MockerFixture):
+    with patch(
+        "sqlmesh.core.engine_adapter.base.EngineAdapter.default_catalog",
+        PropertyMock(return_value=None),
+    ):
+        context = Context(paths="examples/sushi")
+        assert context.default_catalog is None
 
     # Verify that providing a catalog gets set as default catalog
     config = Config(
         model_defaults=ModelDefaultsConfig(dialect="presto"),
-        default_connection=DatabricksConnectionConfig(
-            server_hostname="test", http_path="test", access_token="test", catalog="catalog"
-        ),
-    )
-    context = Context(paths="examples/sushi", config=config)
-    assert context.default_catalog == "catalog"
-
-    # Verify that providing a catalog into a connection with a property that isn't `catalog` gets assigned properly
-    config = Config(
-        model_defaults=ModelDefaultsConfig(dialect="presto"),
-        default_connection=SnowflakeConnectionConfig(
-            account="test", user="test", password="test", database="catalog"
-        ),
+        default_connection=DuckDBConnectionConfig(catalogs={"catalog": ":memory:"}),
     )
     context = Context(paths="examples/sushi", config=config)
     assert context.default_catalog == "catalog"

@@ -300,6 +300,7 @@ class PythonModelTest(ModelTest):
         self.context = TestExecutionContext(
             engine_adapter=engine_adapter,
             models=models,
+            default_catalog=default_catalog,
         )
 
     def runTest(self) -> None:

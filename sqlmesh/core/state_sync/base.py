@@ -107,18 +107,10 @@ class StateReader(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_snapshots_by_name(
-        self, names: t.Iterable[str], exclude_external: bool = False
-    ) -> t.Set[Snapshot]:
-        """Get all snapshots that have the given snapshot name.
-
-        Args:
-            names: Iterable of snapshot names to check.
-            exclude_external: Whether to exclude snapshots of external models from the output.
-
-        Returns:
-            A list of all snapshots that match.
-        """
+    def fqns_exist(
+        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
+    ) -> t.Set[str]:
+        pass
 
     @abc.abstractmethod
     def get_environment(self, environment: str) -> t.Optional[Environment]:
@@ -387,7 +379,7 @@ class StateSync(StateReader, abc.ABC):
         """
 
     @abc.abstractmethod
-    def migrate(self, skip_backup: bool = False) -> None:
+    def migrate(self, default_catalog: t.Optional[str], skip_backup: bool = False) -> None:
         """Migrate the state sync to the latest SQLMesh / SQLGlot version."""
 
     @abc.abstractmethod

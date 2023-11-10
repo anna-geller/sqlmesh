@@ -21,10 +21,12 @@ class TestExecutionContext(ExecutionContext):
         self,
         engine_adapter: EngineAdapter,
         models: UniqueKeyDict[str, Model],
+        default_catalog: t.Optional[str] = None,
     ):
         self.is_dev = True
         self._engine_adapter = engine_adapter
         self.__model_tables = {name: _fully_qualified_test_fixture_name(name) for name in models}
+        self._default_catalog = default_catalog
 
     @property
     def _model_tables(self) -> t.Dict[str, str]:

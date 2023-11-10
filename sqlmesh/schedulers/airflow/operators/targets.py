@@ -117,7 +117,7 @@ class SnapshotEvaluationTarget(BaseTarget[commands.EvaluateCommandPayload], Pyda
     ddl_concurrent_tasks: int = 1
 
     snapshot: Snapshot
-    parent_snapshots: t.Dict[str, Snapshot]
+    parent_snapshots: t.List[Snapshot]
     start: t.Optional[TimeLike] = None
     end: t.Optional[TimeLike] = None
     execution_time: t.Optional[TimeLike] = None

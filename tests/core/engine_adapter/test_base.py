@@ -1410,5 +1410,4 @@ def test_drop_schema_catalog(make_mocked_engine_adapter: t.Callable):
 def test_get_current_catalog(make_mocked_engine_adapter: t.Callable):
     adapter = make_mocked_engine_adapter(EngineAdapter)
 
-    with pytest.raises(NotImplementedError):
-        adapter.get_current_catalog()
+    assert adapter.get_current_catalog() is None

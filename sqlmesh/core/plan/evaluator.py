@@ -81,7 +81,7 @@ class BuiltInPlanEvaluator(PlanEvaluator):
 
         try:
             snapshots = {s.snapshot_id: s for s in plan.snapshots}
-            all_names = {s.name for s in plan.snapshots if plan.is_selected_for_backfill(s.name)}
+            all_names = {s.name for s in plan.snapshots if plan.is_selected_for_backfill(s.fqn)}
             deployability_index = DeployabilityIndex.create(snapshots)
             if plan.is_dev:
                 before_promote_snapshots = all_names
@@ -91,7 +91,7 @@ class BuiltInPlanEvaluator(PlanEvaluator):
                     s.name
                     for s in snapshots.values()
                     if deployability_index.is_representative(s)
-                    and plan.is_selected_for_backfill(s.name)
+                    and plan.is_selected_for_backfill(s.fqn)
                 }
                 after_promote_snapshots = all_names - before_promote_snapshots
                 deployability_index = DeployabilityIndex.all_deployable()

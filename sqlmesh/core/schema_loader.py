@@ -36,37 +36,15 @@ def create_schema_file(
     """
     external_table_names = set()
 
-    possible_fqn_to_name_mapping = {}
-    for model in models.values():
+    for fqn, model in models.items():
         if model.kind.is_external:
-            external_table_names.add(model.name)
+            external_table_names.add(fqn)
         for dep in model.depends_on:
             if dep not in models:
-                dep_table = exp.to_table(dep, dialect=dialect)
                 external_table_names.add(dep)
-                if dep_table.catalog:
-                    dep_table.set("catalog", None)
-                    dep_table_name = dep_table.sql(dialect=dialect)
-                    possible_fqn_to_name_mapping[dep] = dep_table_name
-                    external_table_names.add(dep_table_name)
 
     # Make sure we don't convert internal models into external ones.
-    possible_existing_snapshots = state_reader.get_snapshots_by_name(
-        external_table_names, exclude_external=True
-    )
-    existing_models = set()
-    for possible_existing_snapshot in possible_existing_snapshots:
-        model_name = possible_fqn_to_name_mapping.get(possible_existing_snapshot.fqn)
-        if (
-            model_name
-            and (
-                possible_existing_snapshot.fqn != possible_existing_snapshot.name
-                and possible_existing_snapshot.name == model_name
-            )
-            or (possible_existing_snapshot.fqn == possible_existing_snapshot.name)
-        ):
-            existing_models.add(possible_existing_snapshot.fqn)
-
+    existing_models = state_reader.fqns_exist(external_table_names, exclude_external=True)
     if existing_models:
         logger.warning(
             "The following models already exist and can't be converted to external: %s."

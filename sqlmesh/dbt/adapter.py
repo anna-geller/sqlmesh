@@ -171,6 +171,7 @@ class RuntimeAdapter(BaseAdapter):
         snapshots: t.Optional[t.Iterable[Snapshot]] = None,
         table_mapping: t.Optional[t.Dict[str, str]] = None,
         deployability_index: t.Optional[DeployabilityIndex] = None,
+        default_catalog: t.Optional[str] = None,
     ):
         from dbt.adapters.base import BaseRelation
         from dbt.adapters.base.relation import Policy
@@ -186,9 +187,10 @@ class RuntimeAdapter(BaseAdapter):
             **to_table_mapping((snapshots or set()), deployability_index),
             **table_mapping,
         }
+        self.default_catalog = default_catalog
 
     def _get_database(self, database: t.Optional[str]) -> t.Optional[str]:
-        return database or self.engine_adapter.default_catalog
+        return database or self.default_catalog
 
     def get_relation(
         self, database: t.Optional[str], schema: str, identifier: str
@@ -290,7 +292,7 @@ class RuntimeAdapter(BaseAdapter):
 
         expression = qualify_tables(
             parse_one(sql, read=self.engine_adapter.dialect),
-            catalog=self.engine_adapter.default_catalog,
+            catalog=self.default_catalog,
         )
         expression = exp.replace_tables(expression, self.table_mapping, copy=False)
 
@@ -326,7 +328,7 @@ class RuntimeAdapter(BaseAdapter):
     ) -> exp.Table:
         name = normalize_model_name(
             exp.table_(identifier or "", db=schema, catalog=database),
-            default_catalog=self.engine_adapter.default_catalog,
+            default_catalog=self.default_catalog,
             dialect=self.engine_adapter.dialect,
         )
         if name not in self.table_mapping:

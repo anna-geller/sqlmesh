@@ -63,7 +63,7 @@ class Plan:
         restate_models: A list of models for which the data should be restated for the time range
             specified in this plan. Note: models defined outside SQLMesh (external) won't be a part
             of the restatement.
-        backfill_models: A list of models for which the data should be backfilled as part of this plan.
+        backfill_models: A list of fully qualified model names for which the data should be backfilled as part of this plan.
         no_gaps:  Whether to ensure that new snapshots for nodes that are already a
             part of the target environment have no data gaps when compared against previous
             snapshots for same nodes.
@@ -308,7 +308,7 @@ class Plan:
                 logger.debug(f"Got an unloaded snapshot. Snapshot: {snapshot.name}")
                 unloaded_snapshots.append(snapshot)
             for downstream_indirect_s_id in self.indirectly_modified.get(
-                    snapshot.snapshot_id, set()
+                snapshot.snapshot_id, set()
             ):
                 downstream_snapshot = self._snapshot_mapping[downstream_indirect_s_id]
                 # We don't want to display indirect non-breaking since to users these are effectively no-op changes
@@ -485,7 +485,7 @@ class Plan:
             self.__missing_intervals = {
                 (snapshot.name, snapshot.version_get_or_generate()): missing
                 for snapshot, missing in missing_intervals(
-                    [s for s in self.snapshots if self.is_selected_for_backfill(s.name)],
+                    [s for s in self.snapshots if self.is_selected_for_backfill(s.fqn)],
                     start=self._start,
                     end=self._end,
                     execution_time=self._execution_time,
@@ -656,7 +656,7 @@ class Plan:
                 ):
                     snapshot.categorize_as(
                         SnapshotChangeCategory.FORWARD_ONLY
-                        if self._is_forward_only_model(name)
+                        if self._is_forward_only_model(s_id)
                         else SnapshotChangeCategory.INDIRECT_BREAKING
                     )
 
@@ -737,7 +737,15 @@ class Plan:
                 raise PlanError(
                     "Selecting models to backfill is only supported for development environments."
                 )
-            self._models_to_backfill = set(self.__dag.subdag(*self._input_backfill_models).sorted)
+            self._models_to_backfill = {
+                self.__snapshot_mapping[s_id].fqn
+                for s_id in self.__dag.subdag(
+                    *[
+                        self._model_fqn_to_snapshot[m].snapshot_id
+                        for m in self._input_backfill_models
+                    ]
+                ).sorted
+            }
 
         self._add_restatements()
         self.__missing_intervals = None

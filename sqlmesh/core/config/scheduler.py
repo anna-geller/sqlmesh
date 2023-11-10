@@ -54,6 +54,14 @@ class _SchedulerConfig(abc.ABC):
             The StateSync instance.
         """
 
+    @abc.abstractmethod
+    def get_default_catalog(self, context: Context) -> t.Optional[str]:
+        """Returns the default catalog for the Scheduler.
+
+        Args:
+            context: The SQLMesh Context.
+        """
+
 
 class _EngineAdapterStateSyncSchedulerConfig(_SchedulerConfig):
     def create_state_sync(self, context: Context) -> StateSync:
@@ -68,6 +76,9 @@ class _EngineAdapterStateSyncSchedulerConfig(_SchedulerConfig):
             )
         schema = context.config.get_state_schema(context.gateway)
         return EngineAdapterStateSync(engine_adapter, schema=schema, console=context.console)
+
+    def get_default_catalog(self, context: Context) -> t.Optional[str]:
+        return context.engine_adapter.default_catalog
 
 
 class BuiltInSchedulerConfig(_EngineAdapterStateSyncSchedulerConfig, BaseConfig):
@@ -118,6 +129,9 @@ class _BaseAirflowSchedulerConfig(_SchedulerConfig):
             ddl_concurrent_tasks=self.ddl_concurrent_tasks,
             users=context.users,
         )
+
+    def get_default_catalog(self, context: Context) -> t.Optional[str]:
+        return None
 
 
 class AirflowSchedulerConfig(_BaseAirflowSchedulerConfig, BaseConfig):
@@ -261,6 +275,9 @@ class MWAASchedulerConfig(_EngineAdapterStateSyncSchedulerConfig, BaseConfig):
             ddl_concurrent_tasks=self.ddl_concurrent_tasks,
             users=context.users,
         )
+
+    def get_default_catalog(self, context: Context) -> t.Optional[str]:
+        return None
 
 
 SchedulerConfig = Annotated[

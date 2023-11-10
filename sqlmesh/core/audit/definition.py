@@ -344,6 +344,7 @@ class StandaloneAudit(_Node, AuditMixin):
             *sorted(self.tags),
             str(self.sorted_python_env),
             self.stamp,
+            self.fqn,
         ]
 
         query = self.query if self.hash_raw_query else self.render_query(self) or self.query

@@ -20,6 +20,7 @@ def test_create_external_models(tmpdir, assert_exp_eq):
     config = Config(gateways=GatewayConfig(connection=DuckDBConnectionConfig()))
     context = Context(paths=[tmpdir], config=config)
 
+    # `fruits` is used by DuckDB in the upcoming select query
     fruits = pd.DataFrame(
         [
             {"id": 1, "name": "apple"},
@@ -41,12 +42,13 @@ def test_create_external_models(tmpdir, assert_exp_eq):
 
         SELECT name FROM sushi.raw_fruits
     """,
-        )
+        ),
+        default_catalog="memory",
     )
 
     context.upsert_model(model)
     context.create_external_models()
-    assert context.models["sushi.fruits"].columns_to_types == {
+    assert context.models["memory.sushi.fruits"].columns_to_types == {
         "name": exp.DataType.build("UNKNOWN")
     }
     context.load()
@@ -61,11 +63,12 @@ def test_create_external_models(tmpdir, assert_exp_eq):
 
         SELECT * FROM sushi.raw_fruits
     """,
-        )
+        ),
+        default_catalog="memory",
     )
 
     context.upsert_model(model)
-    raw_fruits = context.models["sushi.raw_fruits"]
+    raw_fruits = context.models["memory.sushi.raw_fruits"]
     assert raw_fruits.kind.is_symbolic
     assert raw_fruits.kind.is_external
     assert raw_fruits.columns_to_types == {
@@ -73,10 +76,10 @@ def test_create_external_models(tmpdir, assert_exp_eq):
         "name": exp.DataType.build("VARCHAR"),
     }
 
-    snapshot = context._model_fqn_to_snapshot["sushi.raw_fruits"]
+    snapshot = context._model_fqn_to_snapshot["memory.sushi.raw_fruits"]
     snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
 
-    fruits = context.models["sushi.fruits"]
+    fruits = context.models["memory.sushi.fruits"]
     assert not fruits.kind.is_symbolic
     assert not fruits.kind.is_external
     assert fruits.columns_to_types == {
@@ -89,13 +92,13 @@ def test_create_external_models(tmpdir, assert_exp_eq):
         SELECT
           "raw_fruits"."id" AS "id",
           "raw_fruits"."name" AS "name"
-        FROM "sushi"."raw_fruits" AS "raw_fruits"
+        FROM "memory"."sushi"."raw_fruits" AS "raw_fruits"
         """,
     )
     # rerunning create external models should refetch existing external models
     context.create_external_models()
     context.load()
-    assert context.models["sushi.raw_fruits"]
+    assert context.models["memory.sushi.raw_fruits"]
 
 
 def test_no_internal_model_conversion(tmp_path: Path, make_snapshot, mocker: MockerFixture):
@@ -104,14 +107,13 @@ def test_no_internal_model_conversion(tmp_path: Path, make_snapshot, mocker: Moc
         "b": exp.DataType.build("text"),
         "a": exp.DataType.build("bigint"),
     }
-    snapshot_a = make_snapshot(SqlModel(name="a", query=parse_one("select * FROM model_b, tbl_c")))
-    snapshot_b = make_snapshot(SqlModel(name="model_b", query=parse_one("select * FROM tbl_c")))
-
-    state_reader_mock = mocker.Mock()
-    state_reader_mock.get_snapshots_by_name.return_value = {snapshot_a, snapshot_b}
 
     model_a = SqlModel(name="a", query=parse_one("select * FROM model_b, tbl_c"))
     model_b = SqlModel(name="b", query=parse_one("select * FROM `tbl-d`", read="bigquery"))
+    snapshot_b = make_snapshot(SqlModel(name="model_b", query=parse_one("select * FROM tbl_c")))
+
+    state_reader_mock = mocker.Mock()
+    state_reader_mock.fqns_exist.return_value = {snapshot_b.fqn}
 
     schema_file = tmp_path / c.SCHEMA_YAML
     create_schema_file(

@@ -1313,6 +1313,9 @@ class SeedModel(_SqlBasedModel):
         if not isinstance(previous, SeedModel):
             return None
 
+        if previous.fqn != self.fqn:
+            return True
+
         new_columns = set(self.column_hashes)
         old_columns = set(previous.column_hashes)
 
@@ -1398,6 +1401,8 @@ class PythonModel(_Model):
         return True
 
     def is_breaking_change(self, previous: Model) -> t.Optional[bool]:
+        if previous.fqn != self.fqn:
+            return True
         return None
 
     @property
@@ -1418,6 +1423,10 @@ class ExternalModel(_Model):
     def is_breaking_change(self, previous: Model) -> t.Optional[bool]:
         if not isinstance(previous, ExternalModel):
             return None
+        # If the default catalog has changed between models then we want to consider that breaking since
+        # that means we could be pointing to a different source.
+        if previous.fqn != self.fqn:
+            return True
         if not previous.columns_to_types_or_raise.items() - self.columns_to_types_or_raise.items():
             return False
         return None

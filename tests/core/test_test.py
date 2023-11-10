@@ -31,6 +31,7 @@ def full_model_without_ctes(request) -> SqlModel:
                 default_dialect=dialect,
             ),
             dialect=dialect,
+            default_catalog="memory",
         ),
     )
 
@@ -56,6 +57,7 @@ def full_model_with_single_cte(request) -> SqlModel:
                 default_dialect=dialect,
             ),
             dialect=dialect,
+            default_catalog="memory",
         ),
     )
 
@@ -84,6 +86,7 @@ def full_model_with_two_ctes(request) -> SqlModel:
                 default_dialect=dialect,
             ),
             dialect=dialect,
+            default_catalog="memory",
         ),
     )
 

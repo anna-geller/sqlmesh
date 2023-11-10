@@ -167,11 +167,11 @@ def test_restate_models(sushi_context_pre_scheduling: Context):
         restate_models=["sushi.waiter_revenue_by_day"], no_prompts=True
     )
     assert plan.restatements == {
-        SnapshotId(name="sushi.waiter_revenue_by_day", identifier="4206471041"): (
+        SnapshotId(name="sushi.waiter_revenue_by_day", identifier="2589543435"): (
             plan.start,
             to_timestamp(to_date("today")),
         ),
-        SnapshotId(name="sushi.top_waiters", identifier="3868243017"): (
+        SnapshotId(name="sushi.top_waiters", identifier="2928817759"): (
             plan.start,
             to_timestamp(to_date("today")),
         ),
@@ -1167,12 +1167,15 @@ def test_models_selected_for_backfill(make_snapshot, mocker: MockerFixture):
 
     snapshot_b = make_snapshot(
         SqlModel(name="b", query=parse_one("select one, ds from a")),
-        nodes={snapshot_a.name: snapshot_a.model},
+        nodes={"a": snapshot_a.model},
     )
     snapshot_b.categorize_as(SnapshotChangeCategory.BREAKING)
 
     context_diff_mock = mocker.Mock()
-    context_diff_mock.snapshots = {"a": snapshot_a, "b": snapshot_b}
+    context_diff_mock.snapshots = {
+        snapshot_a.snapshot_id: snapshot_a,
+        snapshot_b.snapshot_id: snapshot_b,
+    }
     context_diff_mock.added = set()
     context_diff_mock.removed_snapshots = set()
     context_diff_mock.modified_snapshots = {}
@@ -1189,16 +1192,22 @@ def test_models_selected_for_backfill(make_snapshot, mocker: MockerFixture):
     assert plan.is_selected_for_backfill("a")
     assert plan.is_selected_for_backfill("b")
     assert plan.models_to_backfill is None
-    assert {i.snapshot_name for i in plan.missing_intervals} == {"a", "b"}
+    assert {i.snapshot_id for i in plan.missing_intervals} == {
+        snapshot_a.snapshot_id,
+        snapshot_b.snapshot_id,
+    }
 
     plan = Plan(context_diff_mock, is_dev=True, backfill_models={"a"})
     assert plan.is_selected_for_backfill("a")
     assert not plan.is_selected_for_backfill("b")
     assert plan.models_to_backfill == {"a"}
-    assert {i.snapshot_name for i in plan.missing_intervals} == {"a"}
+    assert {i.snapshot_id for i in plan.missing_intervals} == {snapshot_a.snapshot_id}
 
     plan = Plan(context_diff_mock, is_dev=True, backfill_models={"b"})
     assert plan.is_selected_for_backfill("a")
     assert plan.is_selected_for_backfill("b")
     assert plan.models_to_backfill == {"a", "b"}
-    assert {i.snapshot_name for i in plan.missing_intervals} == {"a", "b"}
+    assert {i.snapshot_id for i in plan.missing_intervals} == {
+        snapshot_a.snapshot_id,
+        snapshot_b.snapshot_id,
+    }
