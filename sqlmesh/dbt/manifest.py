@@ -321,9 +321,9 @@ class ManifestHelper:
         # Here we apply our custom extractor to make a best effort to supplement references captured in the manifest.
         dependencies = Dependencies()
         for call_name, node in extract_call_names(target):
-            if len(call_name) == 2 and call_name[0] in ("dbt", "dbt_utils"):
-                dependencies.macros.append(MacroReference(package=call_name[0], name=call_name[1]))
-            elif call_name[0] == "source":
+            if call_name[0] in ("var", "config"):
+                continue
+            if call_name[0] == "source":
                 args = [_jinja_call_arg_name(arg) for arg in node.args]
                 if args and all(arg for arg in args):
                     source = ".".join(args)
@@ -335,6 +335,10 @@ class ManifestHelper:
                     ref = ".".join(args)
                     if not self._is_disabled_ref(ref):
                         dependencies.refs.append(ref)
+            elif len(call_name) == 1:
+                dependencies.macros.append(MacroReference(package=None, name=call_name[0]))
+            else:
+                dependencies.macros.append(MacroReference(package=call_name[0], name=call_name[1]))
 
         return dependencies
 
