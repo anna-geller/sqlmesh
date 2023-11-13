@@ -65,7 +65,6 @@ export default function SearchList<
   to,
   placeholder = 'Search',
   autoFocus = false,
-  isFullWidth = false,
   showIndex = true,
   direction = 'bottom',
   className,
@@ -80,7 +79,6 @@ export default function SearchList<
   showIndex?: boolean
   to?: (item: T) => string
   size?: Size
-  isFullWidth?: boolean
   direction?: 'top' | 'bottom'
   className?: string
 }): JSX.Element {

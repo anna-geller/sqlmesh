@@ -1123,8 +1123,8 @@ function GraphControls({ nodes = [] }: { nodes: Node[] }): JSX.Element {
         showIndex={false}
         size={EnumSize.sm}
         onSelect={handleSelect}
+        direction="top"
         className="w-full min-w-[15rem] max-w-[20rem]"
-        isFullWidth={true}
       />
       <ListboxShow
         options={{
