@@ -70,7 +70,7 @@ def plan_choice(plan: Plan, choice: SnapshotChangeCategory) -> None:
 @pytest.mark.core_integration
 @pytest.mark.parametrize(
     "context_fixture",
-    ["sushi_context", "sushi_default_catalog"],
+    ["sushi_context", "sushi_no_default_catalog"],
 )
 def test_forward_only_plan_with_effective_date(context_fixture: Context, request):
     context = request.getfixturevalue(context_fixture)
@@ -1833,7 +1833,7 @@ def test_migration_with_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
     with pytest.raises(SQLMeshError, match=".*Please run a migration.*"):
         sushi_context.plan("prod")
@@ -1843,7 +1843,7 @@ def test_migration_with_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
     assert (
         sushi_context.state_sync.engine_adapter.fetchone(  # type: ignore
@@ -1885,7 +1885,7 @@ def test_migration_with_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == 'CREATE OR REPLACE VIEW "memory"."sushi"."marketing" AS SELECT * FROM "memory"."sqlmesh__sushi"."sushi__marketing__3476342839"\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM memory.sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
 
     # Change the catalog and make sure models are recreated
@@ -1965,7 +1965,7 @@ def test_migration_without_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
     with pytest.raises(SQLMeshError, match=".*Please run a migration.*"):
         sushi_context.plan("prod")
@@ -1975,7 +1975,7 @@ def test_migration_without_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
     assert (
         sushi_context.state_sync.engine_adapter.fetchone(  # type: ignore
@@ -2022,7 +2022,7 @@ def test_migration_without_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'memory' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == '\nCREATE OR REPLACE VIEW "sushi"."marketing" AS SELECT * FROM "sqlmesh__sushi"."sushi__marketing__3476342839"\n\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
 
     # Set a default catalog and make sure that is represented
@@ -2070,7 +2070,7 @@ def test_migration_without_default_catalog(mocker: MockerFixture):
         engine_adapter.fetchone(
             "SELECT sql FROM duckdb_views() WHERE database_name = 'other_catalog' AND schema_name = 'sushi' AND view_name = 'marketing'"
         )[0]
-        == 'CREATE OR REPLACE VIEW "other_catalog"."sushi"."marketing" AS SELECT * FROM "other_catalog"."sqlmesh__sushi"."sushi__marketing__3476342839"\n;'
+        == "CREATE VIEW sushi.marketing (customer_id, status, updated_at, valid_from, valid_to) AS SELECT * FROM other_catalog.sqlmesh__sushi.sushi__marketing__3476342839;\n"
     )
 
 
