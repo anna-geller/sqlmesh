@@ -169,6 +169,7 @@ def test_adapter_map_snapshot_tables(
         snapshots=[snapshot_mock],
         test_model=BaseRelation.create(schema="test_db", identifier="test_model"),
         foo_bar=BaseRelation.create(schema="foo", identifier="bar"),
+        default_catalog="memory",
     )
 
     engine_adapter.create_schema("foo")
