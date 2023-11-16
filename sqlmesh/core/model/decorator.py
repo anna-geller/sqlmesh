@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlglot import exp
 
 from sqlmesh.core import constants as c
-from sqlmesh.core.dialect import MacroFunc
+from sqlmesh.core.dialect import MacroFunc, normalize_model_name
 from sqlmesh.core.model.definition import Model, create_python_model, create_sql_model
 from sqlmesh.utils import registry_decorator
 from sqlmesh.utils.errors import ConfigError
@@ -83,6 +83,12 @@ class model(registry_decorator):
             statements = common_kwargs.get(key)
             if statements:
                 common_kwargs[key] = [exp.maybe_parse(s, dialect=dialect) for s in statements]
+
+        if common_kwargs.get("depends_on"):
+            common_kwargs["depends_on"] = {
+                normalize_model_name(name, default_catalog=default_catalog, dialect=dialect)
+                for name in common_kwargs["depends_on"]
+            }
 
         if self.is_sql:
             query = MacroFunc(this=exp.Anonymous(this=entrypoint))
