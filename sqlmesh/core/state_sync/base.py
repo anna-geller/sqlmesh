@@ -107,9 +107,7 @@ class StateReader(abc.ABC):
         """
 
     @abc.abstractmethod
-    def fqns_exist(
-        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
-    ) -> t.Set[str]:
+    def nodes_exist(self, names: t.Iterable[str], exclude_external: bool = False) -> t.Set[str]:
         pass
 
     @abc.abstractmethod

@@ -287,34 +287,21 @@ class EngineAdapterStateSync(CommonStateSyncMixin, StateSync):
             )
         }
 
-    def fqns_exist(
-        self, fqns: t.Iterable[str], exclude_external: bool = False, dialect: t.Optional[str] = None
-    ) -> t.Set[str]:
-        fqns = set(fqns)
+    def nodes_exist(self, names: t.Iterable[str], exclude_external: bool = False) -> t.Set[str]:
+        names = set(names)
 
-        possible_names = set()
-        if not fqns:
-            return fqns
-        for fqn in fqns:
-            possible_names.add(fqn)
-            fqn_table = exp.to_table(fqn, dialect=dialect)
-            if fqn_table.catalog is None:
-                fqn_table.set("catalog", None)
-                possible_names.add(fqn_table.sql(dialect=dialect))
+        if not names:
+            return names
 
         query = (
-            exp.select("snapshot")
+            exp.select("name")
             .from_(self.snapshots_table)
-            .where(exp.column("name").isin(*possible_names))
+            .where(exp.column("name").isin(*names))
+            .distinct()
         )
         if exclude_external:
             query = query.where(exp.column("kind_name").neq(ModelKindName.EXTERNAL.value))
-        existing_fqns = set()
-        for row in self.engine_adapter.fetchall(query, quote_identifiers=True):
-            snapshot = Snapshot.parse_raw(row[0])
-            if snapshot.fqn in possible_names:
-                existing_fqns.add(snapshot.fqn)
-        return existing_fqns
+        return {name for name, in self.engine_adapter.fetchall(query, quote_identifiers=True)}
 
     def reset(self, default_catalog: t.Optional[str]) -> None:
         """Resets the state store to the state when it was first initialized."""

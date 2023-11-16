@@ -166,7 +166,7 @@ class BaseExpressionRenderer:
                     raise_config_error(f"Failed to resolve macro for expression. {ex}", self._path)
 
                 if expression:
-                    with self._normalize_and_quote(expression) as expression:
+                    with _normalize_and_quote(expression, self._dialect) as expression:
                         pass
                     resolved_expressions.append(expression)
 
@@ -209,19 +209,20 @@ class BaseExpressionRenderer:
 
         expression = expression.copy()
         with _normalize_and_quote(expression, self._dialect) as expression:
-            snapshots = snapshots or {}
+            snapshots = snapshots or []
             table_mapping = table_mapping or {}
-            mapping = {**to_table_mapping(snapshots.values(), deployability_index), **table_mapping}
-            expand = {d.normalize_model_name(name, dialect=self._dialect) for name in expand} | {
-                name for name, snapshot in snapshots.items() if snapshot.is_embedded
-            }
+            mapping = {**to_table_mapping(snapshots, deployability_index), **table_mapping}
+            expand = set(expand) | {snapshot.fqn for snapshot in snapshots if snapshot.is_embedded}
 
             if expand:
+                model_mapping = {
+                    snapshot.fqn: snapshot.model for snapshot in snapshots if snapshot.is_model
+                }
 
                 def _expand(node: exp.Expression) -> exp.Expression:
                     if isinstance(node, exp.Table) and snapshots:
                         name = exp.table_name(node)
-                        model = snapshots[name].model if name in snapshots else None
+                        model = model_mapping.get(name)
                         if (
                             name in expand
                             and model
@@ -481,7 +482,7 @@ class QueryRenderer(BaseExpressionRenderer):
             if failure or not should_optimize:
                 query = original.copy()
 
-                with self._normalize_and_quote(query) as query:
+                with _normalize_and_quote(query, self._dialect) as query:
                     for select in query.selects:
                         if not isinstance(select, exp.Alias) and select.output_name not in (
                             "*",

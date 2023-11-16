@@ -113,7 +113,7 @@ def test_no_internal_model_conversion(tmp_path: Path, make_snapshot, mocker: Moc
     snapshot_b = make_snapshot(SqlModel(name="model_b", query=parse_one("select * FROM tbl_c")))
 
     state_reader_mock = mocker.Mock()
-    state_reader_mock.fqns_exist.return_value = {snapshot_b.fqn}
+    state_reader_mock.nodes_exist.return_value = {snapshot_b.name}
 
     schema_file = tmp_path / c.SCHEMA_YAML
     create_schema_file(
@@ -125,6 +125,7 @@ def test_no_internal_model_conversion(tmp_path: Path, make_snapshot, mocker: Moc
         engine_adapter_mock,
         state_reader_mock,
         "bigquery",
+        default_catalog=None,
     )
 
     with open(schema_file, "r") as fd:
@@ -149,7 +150,7 @@ def test_missing_table(tmp_path: Path):
     logger = logging.getLogger("sqlmesh.core.schema_loader")
     with patch.object(logger, "warning") as mock_logger:
         create_schema_file(
-            schema_file, {"a": model}, context.engine_adapter, context.state_reader, ""  # type: ignore
+            schema_file, {"a": model}, context.engine_adapter, context.state_reader, "", default_catalog=context.default_catalog  # type: ignore
         )
     assert "Unable to get schema for 'tbl_source'" in mock_logger.call_args[0][0]
 

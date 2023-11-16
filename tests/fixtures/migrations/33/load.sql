@@ -1,12 +1,12 @@
 COPY raw.demographics FROM 'test_export/raw_demographics.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__waiter_revenue_by_day__3608812833 FROM 'test_export/sqlmesh__sushi_sushi__waiter_revenue_by_day____________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__waiter_revenue_by_day__3608812833__temp FROM 'test_export/sqlmesh__sushi_sushi__waiter_revenue_by_day______________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
-COPY sqlmesh__sushi.sushi__waiter_as_customer_by_day__2887908243 FROM 'test_export/sqlmesh__sushi_sushi__waiter_as_customer_by_day____________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
-COPY sqlmesh__sushi.sushi__waiter_as_customer_by_day__2887908243__temp FROM 'test_export/sqlmesh__sushi_sushi__waiter_as_customer_by_day______________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
+COPY sqlmesh__sushi.sushi__waiter_as_customer_by_day__1695007643 FROM 'test_export/sqlmesh__sushi_sushi__waiter_as_customer_by_day____________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
+COPY sqlmesh__sushi.sushi__waiter_as_customer_by_day__1695007643__temp FROM 'test_export/sqlmesh__sushi_sushi__waiter_as_customer_by_day______________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__waiter_revenue_by_day__1623050846 FROM 'test_export/sqlmesh__sushi_sushi__waiter_revenue_by_day_____________1.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__waiter_revenue_by_day__1623050846__temp FROM 'test_export/sqlmesh__sushi_sushi__waiter_revenue_by_day______________temp_1.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
-COPY sqlmesh__sushi.sushi__customers__3386317773 FROM 'test_export/sqlmesh__sushi_sushi__customers____________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
-COPY sqlmesh__sushi.sushi__customers__3386317773__temp FROM 'test_export/sqlmesh__sushi_sushi__customers______________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
+COPY sqlmesh__sushi.sushi__customers__137303981 FROM 'test_export/sqlmesh__sushi_sushi__customers___________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
+COPY sqlmesh__sushi.sushi__customers__137303981__temp FROM 'test_export/sqlmesh__sushi_sushi__customers_____________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__customer_revenue_lifetime__439196980 FROM 'test_export/sqlmesh__sushi_sushi__customer_revenue_lifetime___________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__customer_revenue_lifetime__439196980__temp FROM 'test_export/sqlmesh__sushi_sushi__customer_revenue_lifetime_____________temp.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);
 COPY sqlmesh__sushi.sushi__customer_revenue_by_day__489697783 FROM 'test_export/sqlmesh__sushi_sushi__customer_revenue_by_day___________.csv' (FORMAT 'csv', quote '"', delimiter ',', header 1);

@@ -1292,6 +1292,7 @@ class Context(BaseContext):
                 state_reader=self.state_reader,
                 dialect=config.model_defaults.dialect,
                 max_workers=self.concurrent_tasks,
+                default_catalog=self.default_catalog,
             )
 
     def print_info(self) -> None:

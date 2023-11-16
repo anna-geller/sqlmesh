@@ -123,7 +123,7 @@ def nodes_exist() -> Response:
     with util.scoped_state_sync() as state_sync:
         names = _csv_arg("names")
         exclude_external = "exclude_external" in request.args
-        existing_models = state_sync.fqns_exist(names, exclude_external=exclude_external)
+        existing_models = state_sync.nodes_exist(names, exclude_external=exclude_external)
         return _success(common.ExistingModelsResponse(names=list(existing_models)))
 
 

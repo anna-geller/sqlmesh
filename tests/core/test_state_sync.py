@@ -1304,7 +1304,7 @@ def test_seed_hydration(
     assert stored_snapshot.model.seed.content == "header\n1\n2"
 
 
-def test_fqns_exist(state_sync: EngineAdapterStateSync, make_snapshot: t.Callable):
+def test_nodes_exist(state_sync: EngineAdapterStateSync, make_snapshot: t.Callable):
     snapshot = make_snapshot(
         SqlModel(
             name="a",
@@ -1314,11 +1314,11 @@ def test_fqns_exist(state_sync: EngineAdapterStateSync, make_snapshot: t.Callabl
 
     snapshot.categorize_as(SnapshotChangeCategory.BREAKING)
 
-    assert not state_sync.fqns_exist([snapshot.fqn])
+    assert not state_sync.nodes_exist([snapshot.name])
 
     state_sync.push_snapshots([snapshot])
 
-    assert state_sync.fqns_exist([snapshot.fqn]) == {snapshot.fqn}
+    assert state_sync.nodes_exist([snapshot.name]) == {snapshot.name}
 
 
 def test_invalidate_environment(state_sync: EngineAdapterStateSync, make_snapshot: t.Callable):

@@ -142,10 +142,10 @@ def test_render(sushi_context, assert_exp_eq):
           CAST("o"."waiter_id" AS INT) AS "waiter_id", /* Waiter id */
           CAST(SUM("oi"."quantity" * "i"."price") AS DOUBLE) AS "revenue", /* Revenue from orders taken by this waiter */
           CAST("o"."ds" AS TEXT) AS "ds" /* Date */
-        FROM "sushi"."orders" AS "o"
-        LEFT JOIN "sushi"."order_items" AS "oi"
+        FROM "memory"."sushi"."orders" AS "o"
+        LEFT JOIN "memory"."sushi"."order_items" AS "oi"
           ON "o"."ds" = "oi"."ds" AND "o"."id" = "oi"."order_id"
-        LEFT JOIN "sushi"."items" AS "i"
+        LEFT JOIN "memory"."sushi"."items" AS "i"
           ON "oi"."ds" = "i"."ds" AND "oi"."item_id" = "i"."id"
         WHERE
           "o"."ds" <= '1970-01-01' AND "o"."ds" >= '1970-01-01'

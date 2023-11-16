@@ -148,7 +148,7 @@ class _Model(ModelMeta, frozen=True):
             execution_time: The date/time time reference to use for execution time.
 
         Returns:
-            A generator which yields eiether a query object or one of the supported dataframe objects.
+            A generator which yields either a query object or one of the supported dataframe objects.
         """
         yield self.render_query_or_raise(
             start=start,

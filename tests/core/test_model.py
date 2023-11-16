@@ -1374,7 +1374,12 @@ def test_python_models_returning_sql(assert_exp_eq) -> None:
     assert isinstance(model2.query, d.MacroFunc)
     assert model2.depends_on == {"MODEL1"}
     assert_exp_eq(
-        context.render("model2", expand=["model1"]),
+        context.render(
+            "model2",
+            expand=[
+                d.normalize_model_name("model1", context.default_catalog, context.config.dialect)
+            ],
+        ),
         """
         SELECT
           "MODEL1"."X" AS "X",

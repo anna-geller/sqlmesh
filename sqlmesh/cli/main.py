@@ -12,6 +12,7 @@ from sqlmesh.cli import error_handler
 from sqlmesh.cli import options as opt
 from sqlmesh.cli.example_project import ProjectTemplate, init_example_project
 from sqlmesh.core.context import Context
+from sqlmesh.core.dialect import normalize_model_name
 from sqlmesh.utils.date import TimeLike
 from sqlmesh.utils.errors import MissingDependencyError
 
@@ -142,8 +143,16 @@ def render(
     no_format: bool = False,
 ) -> None:
     """Renders a model's query, optionally expanding referenced models."""
+    mode_name = normalize_model_name(
+        model, default_catalog=ctx.obj.default_catalog, dialect=dialect
+    )
+    if expand and not isinstance(expand, bool):
+        expand = {
+            normalize_model_name(x, default_catalog=ctx.obj.default_catalog, dialect=dialect)
+            for x in expand
+        }
     rendered = ctx.obj.render(
-        model,
+        mode_name,
         start=start,
         end=end,
         execution_time=execution_time,

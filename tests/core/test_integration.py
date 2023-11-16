@@ -1805,7 +1805,7 @@ def test_scd_type_2(tmp_path: pathlib.Path):
 
 @pytest.mark.integration
 @pytest.mark.core_integration
-@freeze_time("2023-11-11 00:00:00")
+@freeze_time("2023-11-16 00:00:00")
 def test_migration_with_default_catalog(mocker: MockerFixture):
     """
     Verifies the behavior of migrating to a release supporting default catalog when before it wasn't supported
@@ -1873,7 +1873,7 @@ def test_migration_with_default_catalog(mocker: MockerFixture):
     assert len(plan.snapshots) == 15
     # Standalone audit does not start with the default catalog
     assert len([x for x in plan.snapshots if x.fqn.startswith("memory")]) == 14
-    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 67
+    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 66
     assert (
         sushi_context.engine_adapter.fetchone(
             "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"
@@ -1933,7 +1933,7 @@ def test_migration_with_default_catalog(mocker: MockerFixture):
 
 @pytest.mark.integration
 @pytest.mark.core_integration
-@freeze_time("2023-11-11 00:00:00")
+@freeze_time("2023-11-16 00:00:00")
 def test_migration_without_default_catalog(mocker: MockerFixture):
     """
     Verifies the behavior of migrating to a release supporting default catalog when before it wasn't supported
@@ -2010,7 +2010,7 @@ def test_migration_without_default_catalog(mocker: MockerFixture):
         len([x for x in plan.snapshots if x.fqn.startswith("sushi") or x.fqn.startswith("raw")])
         == 14
     )
-    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 67
+    assert sushi_context.engine_adapter.fetchone("SELECT COUNT(*) FROM sushi.marketing")[0] == 66
     assert (
         sushi_context.engine_adapter.fetchone(
             "SELECT COUNT(DISTINCT ds) FROM sushi.customer_revenue_by_day"

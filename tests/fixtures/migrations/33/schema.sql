@@ -9,12 +9,12 @@ CREATE SCHEMA sqlmesh;
 CREATE TABLE raw.demographics(customer_id INTEGER, zip VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__waiter_revenue_by_day__3608812833(waiter_id INTEGER, revenue DOUBLE, dummy_col VARCHAR, ds VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__waiter_revenue_by_day__3608812833__temp(waiter_id INTEGER, revenue DOUBLE, dummy_col VARCHAR, ds VARCHAR);
-CREATE TABLE sqlmesh__sushi.sushi__waiter_as_customer_by_day__2887908243(waiter_id INTEGER, waiter_name VARCHAR, flag INTEGER, ds VARCHAR);
-CREATE TABLE sqlmesh__sushi.sushi__waiter_as_customer_by_day__2887908243__temp(waiter_id INTEGER, waiter_name VARCHAR, flag INTEGER, ds VARCHAR);
+CREATE TABLE sqlmesh__sushi.sushi__waiter_as_customer_by_day__1695007643(waiter_id INTEGER, waiter_name VARCHAR, flag INTEGER, ds VARCHAR);
+CREATE TABLE sqlmesh__sushi.sushi__waiter_as_customer_by_day__1695007643__temp(waiter_id INTEGER, waiter_name VARCHAR, flag INTEGER, ds VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__waiter_revenue_by_day__1623050846(waiter_id INTEGER, revenue DOUBLE, ds VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__waiter_revenue_by_day__1623050846__temp(waiter_id INTEGER, revenue DOUBLE, ds VARCHAR);
-CREATE TABLE sqlmesh__sushi.sushi__customers__3386317773(customer_id INTEGER, status VARCHAR, zip VARCHAR);
-CREATE TABLE sqlmesh__sushi.sushi__customers__3386317773__temp(customer_id INTEGER, status VARCHAR, zip VARCHAR);
+CREATE TABLE sqlmesh__sushi.sushi__customers__137303981(customer_id INTEGER, status VARCHAR, zip VARCHAR);
+CREATE TABLE sqlmesh__sushi.sushi__customers__137303981__temp(customer_id INTEGER, status VARCHAR, zip VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__customer_revenue_lifetime__439196980(customer_id INTEGER, revenue DOUBLE, ds VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__customer_revenue_lifetime__439196980__temp(customer_id INTEGER, revenue DOUBLE, ds VARCHAR);
 CREATE TABLE sqlmesh__sushi.sushi__customer_revenue_by_day__489697783(customer_id INTEGER, revenue DOUBLE, ds VARCHAR);
@@ -46,13 +46,13 @@ CREATE OR REPLACE VIEW "sushi__dev"."top_waiters" AS SELECT * FROM "sqlmesh__sus
 ;
 CREATE OR REPLACE VIEW "sushi__dev"."waiter_revenue_by_day" AS SELECT * FROM "sqlmesh__sushi"."sushi__waiter_revenue_by_day__3608812833"
 ;
-CREATE OR REPLACE VIEW "sushi"."waiter_as_customer_by_day" AS SELECT * FROM "sqlmesh__sushi"."sushi__waiter_as_customer_by_day__2887908243"
+CREATE OR REPLACE VIEW "sushi"."waiter_as_customer_by_day" AS SELECT * FROM "sqlmesh__sushi"."sushi__waiter_as_customer_by_day__1695007643"
 ;
 CREATE OR REPLACE VIEW "sushi"."top_waiters" AS SELECT * FROM "sqlmesh__sushi"."sushi__top_waiters__132946899"
 ;
 CREATE OR REPLACE VIEW "sushi"."waiter_revenue_by_day" AS SELECT * FROM "sqlmesh__sushi"."sushi__waiter_revenue_by_day__1623050846"
 ;
-CREATE OR REPLACE VIEW "sushi"."customers" AS SELECT * FROM "sqlmesh__sushi"."sushi__customers__3386317773"
+CREATE OR REPLACE VIEW "sushi"."customers" AS SELECT * FROM "sqlmesh__sushi"."sushi__customers__137303981"
 ;
 CREATE OR REPLACE VIEW "sushi"."customer_revenue_lifetime" AS SELECT * FROM "sqlmesh__sushi"."sushi__customer_revenue_lifetime__439196980"
 ;
@@ -70,5 +70,7 @@ CREATE OR REPLACE VIEW "sushi"."orders" AS SELECT * FROM "sqlmesh__sushi"."sushi
 ;
 CREATE OR REPLACE VIEW "sushi"."items" AS SELECT * FROM "sqlmesh__sushi"."sushi__items__115405787"
 ;
+
+
 
 
