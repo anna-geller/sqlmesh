@@ -143,7 +143,21 @@ def migrate(state_sync, default_catalog: t.Optional[str], **kwargs):  # type: ig
 
         engine_adapter.insert_append(
             environments_table,
-            pd.DataFrame(new_environments),
+            pd.DataFrame(
+                new_environments,
+                dtype={
+                    "name": "str",
+                    "snapshots": "str",
+                    "start_at": "str",
+                    "end_at": "str",
+                    "plan_id": "str",
+                    "previous_plan_id": "str",
+                    "expiration_ts": "Int64",
+                    "finalized_ts": "Int64",
+                    "promoted_snapshot_ids": "str",
+                    "suffix_target": "str",
+                },
+            ),
             columns_to_types={
                 "name": exp.DataType.build(index_type),
                 "snapshots": exp.DataType.build("text"),
