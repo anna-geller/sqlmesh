@@ -259,7 +259,9 @@ class SparkEngineAdapter(HiveMetastoreTablePropertiesMixin):
         kwargs = (
             dict(schema=self.sqlglot_to_spark_types(columns_to_types)) if columns_to_types else {}
         )
-        return self.spark.createDataFrame(df, **kwargs)  # type: ignore
+        # PySpark will complain about 'nan' not being a valid value so we replace it here with None
+        df = df.replace(float("nan"), None)
+        return self.spark.createDataFrame(df.replace(float("nan"), None), **kwargs)  # type: ignore
 
     def _get_temp_table(
         self,
