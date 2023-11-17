@@ -25,6 +25,7 @@ import PlanChangePreview from '@components/plan/PlanChangePreview'
 import { EnumErrorKey, useIDE } from './context'
 import { type ModelPlanOverviewTracker } from '@models/tracker-plan-overview'
 import { type ModelPlanApplyTracker } from '@models/tracker-plan-apply'
+import { type SnapshotId } from '@api/client'
 
 export default function RunPlan(): JSX.Element {
   const { setIsPlanOpen } = useIDE()
@@ -226,9 +227,9 @@ function PlanChanges({
                 headline="Direct Changes"
                 type={EnumPlanChangeType.Direct}
                 changes={
-                  planOverview.modified?.direct.map(
-                    ({ model_name }) => model_name,
-                  ) ?? []
+                  (planOverview.modified?.direct.map(({ model_name }) => ({
+                    name: model_name,
+                  })) as SnapshotId[]) ?? []
                 }
               />
             )}
@@ -237,9 +238,9 @@ function PlanChanges({
                 headline="Indirectly Modified"
                 type={EnumPlanChangeType.Indirect}
                 changes={
-                  planOverview.modified?.indirect.map(
-                    ({ model_name }) => model_name,
-                  ) ?? []
+                  (planOverview.modified?.indirect.map(({ model_name }) => ({
+                    name: model_name,
+                  })) as SnapshotId[]) ?? []
                 }
               />
             )}
@@ -522,7 +523,7 @@ function ChangesPreview({
 }: {
   headline?: string
   type: PlanChangeType
-  changes: string[]
+  changes: SnapshotId[]
 }): JSX.Element {
   const [isShowing, setIsShowing] = useState(false)
 
